@@ -40,7 +40,17 @@ def read_image_unicode(image_path: str):
                 return img
     except Exception:
         pass
-    return cv2.imread(clean_path)
+
+    img = cv2.imread(clean_path)
+    if img is not None:
+        return img
+
+    try:
+        from PIL import Image
+        pil_img = Image.open(clean_path).convert("RGB")
+        return cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
+    except Exception:
+        return None
 
 
 def open_video_unicode(video_source):
@@ -113,7 +123,7 @@ def setup_console_size(width: int, height: int):
     try:
         cols = max(90, width + 4)
         lines = max(30, height + 8)
-        os.system(f"mode con: cols={cols} lines={lines}")
+        os.system(f"mode con: cols={cols} lines={lines} > nul 2>&1")
     except Exception:
         pass
 
@@ -125,6 +135,7 @@ def convert_image(
     char_set: str = ASCII_CHARS,
     invert: bool = False,
     output_txt: str = "ascii_photo.txt",
+    display_title: str = "",
 ):
     """Converts a photo to ASCII and displays it in the console."""
     frame = read_image_unicode(image_path)
@@ -140,8 +151,9 @@ def convert_image(
     ascii_art, height = frame_to_ascii(frame, width=width, color=color, char_set=char_set, invert=invert)
     setup_console_size(width, height)
 
+    title_name = display_title if display_title else Path(image_path).name
     print("\033[2J\033[H", end="")
-    print(f"=== ASCII PHOTO: {Path(image_path).name} (Width: {width}, Color: {'ON' if color else 'OFF'}) ===")
+    print(f"=== ASCII PHOTO: {title_name} (Width: {width}, Color: {'ON' if color else 'OFF'}) ===")
     print("-" * min(width, 80))
     print(ascii_art)
     print("-" * min(width, 80))
@@ -296,6 +308,18 @@ def run_cli_interactive():
 
 def parse_and_run_cli():
     try:
+        # Якщо запущено без консолі (наприклад, через pythonw), примусово створюємо її
+        if sys.platform == "win32":
+            try:
+                import ctypes
+                if ctypes.windll.kernel32.GetConsoleWindow() == 0 and (sys.stdin is None or not hasattr(sys.stdin, "fileno")):
+                    ctypes.windll.kernel32.AllocConsole()
+                    sys.stdout = open("CONOUT$", "w", encoding="utf-8", errors="replace")
+                    sys.stderr = open("CONOUT$", "w", encoding="utf-8", errors="replace")
+                    sys.stdin = open("CONIN$", "r", encoding="utf-8", errors="replace")
+            except Exception:
+                pass
+
         parser = argparse.ArgumentParser(description="ASCII Studio CLI Runner")
         parser.add_argument("--cli", action="store_true", help="Запустити в консольному режимі")
         parser.add_argument("--mode", choices=["image", "video", "webcam", "menu"], default="menu")
@@ -305,8 +329,17 @@ def parse_and_run_cli():
         parser.add_argument("--camera", type=int, default=0)
         parser.add_argument("--charset", type=str, default=ASCII_CHARS)
         parser.add_argument("--invert", type=int, default=0)
+        parser.add_argument("--title", type=str, default="")
 
         args, _ = parser.parse_known_args()
+
+        if sys.platform == "win32":
+            try:
+                import ctypes
+                mode_str = args.title or args.mode.upper()
+                ctypes.windll.kernel32.SetConsoleTitleW(f"ASCII Studio CMD — {mode_str}")
+            except Exception:
+                pass
 
         if args.mode == "menu":
             run_cli_interactive()
@@ -321,6 +354,7 @@ def parse_and_run_cli():
                 color=bool(args.color),
                 char_set=args.charset,
                 invert=bool(args.invert),
+                display_title=args.title,
             )
         elif args.mode == "video":
             if not args.path:

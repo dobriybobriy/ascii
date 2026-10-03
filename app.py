@@ -65,6 +65,24 @@ def open_video_unicode(video_source):
     return cap
 
 
+def get_console_python():
+    """Повертає шлях до консольного python.exe (якщо застосунок запущено через pythonw.exe)."""
+    exe = sys.executable
+    if exe.lower().endswith("pythonw.exe"):
+        cand = exe[:-5] + ".exe"
+        if os.path.exists(cand):
+            return cand
+    elif "pythonw" in exe.lower():
+        cand = exe.lower().replace("pythonw.exe", "python.exe")
+        if os.path.exists(cand):
+            return cand
+    import shutil
+    py = shutil.which("python.exe") or shutil.which("python")
+    if py:
+        return py
+    return exe
+
+
 class AsciiStudioApp(ctk.CTk):
     def __init__(self):
         super().__init__()
@@ -577,21 +595,23 @@ class AsciiStudioApp(ctk.CTk):
     def launch_cmd_interactive(self):
         """Відкриває інтерактивне меню ASCII у новому вікні Windows CMD."""
         script_path = str((Path(__file__).parent / "main.py").resolve())
-        cmd_list = [sys.executable, script_path, "--cli", "--mode", "menu"]
+        py_exe = get_console_python()
+        cmd_list = [py_exe, script_path, "--cli", "--mode", "menu"]
         creationflags = getattr(subprocess, "CREATE_NEW_CONSOLE", 0x10) if sys.platform == "win32" else 0
         try:
             subprocess.Popen(cmd_list, creationflags=creationflags)
         except Exception as e:
             messagebox.showerror(self.t("dialog_saved_title"), self.t("dialog_cmd_error", err=e))
 
-    def launch_cmd_process(self, mode: str, path: str = "", camera: int = 0):
+    def launch_cmd_process(self, mode: str, path: str = "", camera: int = 0, title: str = ""):
         """Запускає конкретний режим (фото, відео, вебку) у новому вікні CMD."""
         opts = self.get_current_settings()
         script_path = str((Path(__file__).parent / "main.py").resolve())
+        py_exe = get_console_python()
 
         is_color = 1 if opts["color_mode"] not in ("Monochrome (White)", "Монохромний (Білий)") else 0
         cmd_list = [
-            sys.executable,
+            py_exe,
             script_path,
             "--cli",
             "--mode", mode,
@@ -606,6 +626,9 @@ class AsciiStudioApp(ctk.CTk):
         elif mode == "webcam":
             cmd_list.extend(["--camera", str(camera)])
 
+        if title:
+            cmd_list.extend(["--title", str(title)])
+
         creationflags = getattr(subprocess, "CREATE_NEW_CONSOLE", 0x10) if sys.platform == "win32" else 0
         try:
             subprocess.Popen(cmd_list, creationflags=creationflags)
@@ -617,14 +640,16 @@ class AsciiStudioApp(ctk.CTk):
             messagebox.showwarning("Notice", self.t("dialog_warn_no_img"))
             return
 
-        target_path = self.current_image_path
-        if not target_path or not Path(target_path).exists():
-            temp_path = str((Path(__file__).parent / "_cmd_preview.png").resolve())
+        temp_path = str((Path(__file__).parent / "_cmd_preview.png").resolve())
+        try:
             _, buf = cv2.imencode(".png", self.current_orig_image)
             buf.tofile(temp_path)
             target_path = temp_path
+        except Exception:
+            target_path = self.current_image_path or temp_path
 
-        self.launch_cmd_process(mode="image", path=target_path)
+        orig_name = Path(self.current_image_path).name if self.current_image_path else "Photo"
+        self.launch_cmd_process(mode="image", path=target_path, title=orig_name)
 
     def open_video_in_cmd(self):
         if not self.current_video_path or not Path(self.current_video_path).exists():
