@@ -358,5 +358,13 @@ if __name__ == "__main__":
     if "--cli" in sys.argv:
         parse_and_run_cli()
     else:
+        if sys.platform == "win32":
+            try:
+                import ctypes
+                hwnd = ctypes.windll.kernel32.GetConsoleWindow()
+                if hwnd:
+                    ctypes.windll.user32.ShowWindow(hwnd, 0)
+            except Exception:
+                pass
         from app import main as start_gui
         start_gui()

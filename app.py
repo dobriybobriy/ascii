@@ -40,6 +40,25 @@ def open_video_unicode(video_source):
     return cap
 
 
+# 1. Приховуємо вікно консолі (CMD), якщо програма запущена в графічному режимі
+if sys.platform == "win32":
+    try:
+        import ctypes
+        hwnd = ctypes.windll.kernel32.GetConsoleWindow()
+        if hwnd:
+            ctypes.windll.user32.ShowWindow(hwnd, 0)  # 0 = SW_HIDE
+    except Exception:
+        pass
+
+# 2. Налаштовуємо AppUserModelID для відображення власної іконки на панелі завдань Windows (Taskbar)
+if sys.platform == "win32":
+    try:
+        import ctypes
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("antigravity.asciistudio.pro.1.0")
+    except Exception:
+        pass
+
+
 class AsciiStudioApp(ctk.CTk):
     def __init__(self):
         super().__init__()
@@ -47,6 +66,24 @@ class AsciiStudioApp(ctk.CTk):
         self.title("ASCII Studio Pro — Відео, Фото та Вебкамера")
         self.geometry("1300x850")
         self.minsize(980, 680)
+
+        # Встановлення власної іконки застосунку для вікна та панелі завдань
+        assets_dir = Path(__file__).parent / "assets"
+        ico_path = assets_dir / "icon.ico"
+        png_path = assets_dir / "icon.png"
+
+        if ico_path.exists():
+            try:
+                self.iconbitmap(str(ico_path.resolve()))
+            except Exception:
+                pass
+
+        if png_path.exists():
+            try:
+                self._app_icon_photo = ImageTk.PhotoImage(file=str(png_path.resolve()))
+                self.iconphoto(True, self._app_icon_photo)
+            except Exception:
+                pass
 
         # Автоматичне розгортання вікна на весь екран при запуску
         self.after(60, lambda: self.state("zoomed"))
