@@ -3,8 +3,17 @@ import numpy as np
 from PIL import Image, ImageFont, ImageDraw
 import html
 
-# Пресети символів
-CHAR_PRESETS = {
+# Пресети символів (English & Ukrainian)
+PRESETS_EN = {
+    "Standard (10 chars)": " .:-=+*#%@",
+    "Detailed (70 chars)": " .'`^\",:;Il!i><~+_-?][}{1)(|\\/tfjrxnuvczXYUJCLQ0OZmwqpdbkhao*#MW&8%B@$",
+    "Blocks (Pseudographics)": " ░▒▓█",
+    "Binary (0 and 1)": " 01",
+    "Matrix (Digits & Code)": " 0123456789ABCDEF$#*",
+    "Minimalist": " .oO@",
+}
+
+PRESETS_UK = {
     "Стандартний (10 символів)": " .:-=+*#%@",
     "Детальний (70 символів)": " .'`^\",:;Il!i><~+_-?][}{1)(|\\/tfjrxnuvczXYUJCLQ0OZmwqpdbkhao*#MW&8%B@$",
     "Блоки (Символи псевдографіки)": " ░▒▓█",
@@ -13,7 +22,19 @@ CHAR_PRESETS = {
     "Мінімалістичний": " .oO@",
 }
 
-COLOR_MODES = [
+# За замовчуванням — англійська
+CHAR_PRESETS = PRESETS_EN
+
+COLOR_MODES_EN = [
+    "Full Color (RGB)",
+    "Monochrome (White)",
+    "Matrix (Green)",
+    "Retro (Amber)",
+    "Cyberpunk (Neon)",
+    "Sepia (Vintage)",
+]
+
+COLOR_MODES_UK = [
     "Повний колір (RGB)",
     "Монохромний (Білий)",
     "Матриця (Зелений)",
@@ -21,6 +42,9 @@ COLOR_MODES = [
     "Кіберпанк (Неон)",
     "Сепія (Вінтаж)",
 ]
+
+# За замовчуванням — англійська
+COLOR_MODES = COLOR_MODES_EN
 
 
 class AsciiEngine:
@@ -69,8 +93,8 @@ class AsciiEngine:
         self,
         frame_bgr: np.ndarray,
         width: int = 100,
-        char_set: str = CHAR_PRESETS["Стандартний (10 символів)"],
-        color_mode: str = "Повний колір (RGB)",
+        char_set: str = " .:-=+*#%@",
+        color_mode: str = "Full Color (RGB)",
         contrast: float = 1.0,
         brightness: int = 0,
         invert: bool = False,
@@ -129,42 +153,44 @@ class AsciiEngine:
         # Визначаємо колірні шари
         rendered_img = np.full((out_h, out_w, 3), bg_color, dtype=np.uint8)
 
-        if color_mode == "Повний колір (RGB)":
+        if "Color" in color_mode or "Колір" in color_mode or "RGB" in color_mode:
             grid_colors = np.repeat(np.repeat(small_rgb, self._char_h, axis=0), self._char_w, axis=1)
             rendered_img[grid_masks] = grid_colors[grid_masks]
 
-        elif color_mode == "Монохромний (Білий)":
-            # Робимо колір тексту залежним від яскравості або суцільним білим
+        elif "Monochrome" in color_mode or "Монохром" in color_mode or "White" in color_mode or "Білий" in color_mode:
             val = np.repeat(np.repeat(gray, self._char_h, axis=0), self._char_w, axis=1)
             rendered_img[grid_masks] = np.stack([val, val, val], axis=-1)[grid_masks]
 
-        elif color_mode == "Матриця (Зелений)":
+        elif "Matrix" in color_mode or "Матриця" in color_mode or "Green" in color_mode or "Зелен" in color_mode:
             val = np.repeat(np.repeat(gray, self._char_h, axis=0), self._char_w, axis=1)
             g = np.clip(val.astype(np.int16) + 40, 0, 255).astype(np.uint8)
             r = (val * 0.15).astype(np.uint8)
             b = (val * 0.25).astype(np.uint8)
             rendered_img[grid_masks] = np.stack([r, g, b], axis=-1)[grid_masks]
 
-        elif color_mode == "Ретро (Бурштиновий)":
+        elif "Retro" in color_mode or "Amber" in color_mode or "Ретро" in color_mode or "Бурштин" in color_mode:
             val = np.repeat(np.repeat(gray, self._char_h, axis=0), self._char_w, axis=1)
             r = val
             g = (val * 0.7).astype(np.uint8)
             b = (val * 0.1).astype(np.uint8)
             rendered_img[grid_masks] = np.stack([r, g, b], axis=-1)[grid_masks]
 
-        elif color_mode == "Кіберпанк (Неон)":
+        elif "Cyberpunk" in color_mode or "Neon" in color_mode or "Кіберпанк" in color_mode or "Неон" in color_mode:
             val = np.repeat(np.repeat(gray, self._char_h, axis=0), self._char_w, axis=1)
             r = np.clip(val * 1.1, 0, 255).astype(np.uint8)
             g = (val * 0.3).astype(np.uint8)
             b = np.clip(val * 1.3, 0, 255).astype(np.uint8)
             rendered_img[grid_masks] = np.stack([r, g, b], axis=-1)[grid_masks]
 
-        elif color_mode == "Сепія (Вінтаж)":
+        elif "Sepia" in color_mode or "Сепія" in color_mode or "Vintage" in color_mode or "Вінтаж" in color_mode:
             val = np.repeat(np.repeat(gray, self._char_h, axis=0), self._char_w, axis=1)
             r = np.clip(val * 1.1, 0, 255).astype(np.uint8)
             g = np.clip(val * 0.9, 0, 255).astype(np.uint8)
             b = np.clip(val * 0.7, 0, 255).astype(np.uint8)
             rendered_img[grid_masks] = np.stack([r, g, b], axis=-1)[grid_masks]
+        else:
+            grid_colors = np.repeat(np.repeat(small_rgb, self._char_h, axis=0), self._char_w, axis=1)
+            rendered_img[grid_masks] = grid_colors[grid_masks]
 
         pil_image = Image.fromarray(rendered_img)
         return pil_image, plain_text, small_rgb, text_grid

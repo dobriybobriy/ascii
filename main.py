@@ -126,11 +126,11 @@ def convert_image(
     invert: bool = False,
     output_txt: str = "ascii_photo.txt",
 ):
-    """Конвертує фото в ASCII і відображає в консолі."""
+    """Converts a photo to ASCII and displays it in the console."""
     frame = read_image_unicode(image_path)
     if frame is None:
-        print(f"[!] Не вдалося відкрити фото: {image_path}")
-        print("Натисніть Enter для виходу...")
+        print(f"[!] Could not open image: {image_path}")
+        print("Press Enter to exit...")
         try:
             input()
         except Exception:
@@ -141,21 +141,21 @@ def convert_image(
     setup_console_size(width, height)
 
     print("\033[2J\033[H", end="")
-    print(f"=== ASCII ФОТО: {Path(image_path).name} (Ширина: {width}, Кольори: {'Увімк' if color else 'Вимк'}) ===")
+    print(f"=== ASCII PHOTO: {Path(image_path).name} (Width: {width}, Color: {'ON' if color else 'OFF'}) ===")
     print("-" * min(width, 80))
     print(ascii_art)
     print("-" * min(width, 80))
 
-    # Зберігаємо чистий текст у файл
+    # Save clean text to file
     plain_art, _ = frame_to_ascii(frame, width=width, color=False, char_set=char_set, invert=invert)
     try:
         with open(output_txt, "w", encoding="utf-8") as f:
             f.write(plain_art)
-        print(f"[OK] Результат також збережено у: {output_txt}")
+        print(f"[OK] Result also saved to: {output_txt}")
     except Exception as e:
-        print(f"[!] Не вдалося зберегти файл: {e}")
+        print(f"[!] Failed to save text file: {e}")
 
-    print("\nНатисніть клавішу Enter, щоб закрити вікно...")
+    print("\nPress Enter to close window...")
     try:
         input()
     except (KeyboardInterrupt, EOFError):
@@ -170,14 +170,14 @@ def play_video(
     invert: bool = False,
     is_webcam: bool = False,
 ):
-    """Відтворює відео або вебкамеру в терміналі через ASCII-символи."""
+    """Plays video or webcam feed in the terminal using ASCII characters."""
     import msvcrt
 
     cap = open_video_unicode(video_path)
     if not cap.isOpened():
-        src_name = "камеру" if is_webcam else f"відео: {video_path}"
-        print(f"[!] Не вдалося відкрити {src_name}")
-        print("Натисніть Enter для виходу...")
+        src_name = "webcam" if is_webcam else f"video: {video_path}"
+        print(f"[!] Could not open {src_name}")
+        print("Press Enter to exit...")
         try:
             input()
         except Exception:
@@ -191,7 +191,7 @@ def play_video(
 
     ret, sample_frame = cap.read()
     if not ret:
-        print("[!] Не вдалося прочитати перший кадр.")
+        print("[!] Could not read initial frame.")
         cap.release()
         return
 
@@ -204,12 +204,11 @@ def play_video(
     if not is_webcam:
         cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
 
-    title_str = "ЖИВА ВЕБКАМЕРА" if is_webcam else f"ВІДЕО: {Path(str(video_path)).name}"
+    title_str = "LIVE WEBCAM" if is_webcam else f"VIDEO: {Path(str(video_path)).name}"
     print(f"\033[2J\033[H=== {title_str} (FPS: {fps:.1f}) ===")
-    print("Щоб зупинити, натисніть клавішу 'q' або Ctrl + C")
+    print("Press 'q' or Ctrl + C to stop")
     time.sleep(1)
 
-    # Ховаємо курсор терміналу
     sys.stdout.write("\033[?25l")
     sys.stdout.flush()
 
@@ -219,7 +218,6 @@ def play_video(
             ret, frame = cap.read()
             if not ret:
                 if not is_webcam:
-                    # Зациклюємо відео
                     cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
                     continue
                 else:
@@ -233,10 +231,9 @@ def play_video(
             sys.stdout.write("\033[H" + ascii_frame)
             sys.stdout.flush()
 
-            # Перевірка натискання клавіші 'q' без блокування
             if msvcrt.kbhit():
                 key = msvcrt.getch().lower()
-                if key in (b'q', b'\x1b', b'\x03'):  # 'q', ESC, Ctrl+C
+                if key in (b'q', b'\x1b', b'\x03'):
                     break
 
             elapsed = time.time() - start_t
@@ -250,7 +247,7 @@ def play_video(
         cap.release()
         sys.stdout.write("\033[?25h\033[0m\n")
         sys.stdout.flush()
-        print("\nВідтворення зупинено. Натисніть Enter для виходу...")
+        print("\nPlayback stopped. Press Enter to exit...")
         try:
             input()
         except (KeyboardInterrupt, EOFError):
@@ -259,37 +256,37 @@ def play_video(
 
 def run_cli_interactive():
     print("=" * 60)
-    print("       ASCII STUDIO — КОНСОЛЬНИЙ РЕЖИМ (CMD)       ")
+    print("       ASCII STUDIO — CONSOLE MODE (CMD)       ")
     print("=" * 60)
-    print("1. Відтворити ВІДЕО в терміналі через ASCII")
-    print("2. Конвертувати ФОТО в ASCII (+ зберегти в .txt)")
-    print("3. Запустити ВЕБКАМЕРУ в реальному часі")
-    print("4. Запустити Графічний Застосунок (GUI)")
+    print("1. Play VIDEO in terminal as ASCII")
+    print("2. Convert PHOTO to ASCII (+ save to .txt)")
+    print("3. Stream WEBCAM in real-time")
+    print("4. Launch Graphical Application (GUI)")
 
-    choice = input("\nОберіть дію (1, 2, 3 або 4) [1]: ").strip() or "1"
+    choice = input("\nSelect action (1, 2, 3 or 4) [1]: ").strip() or "1"
 
     if choice == "4":
         from app import main as start_gui
         start_gui()
         return
 
-    color_input = input("Увімкнути 24-бітні ANSI кольори? (y/n) [y]: ").strip().lower()
+    color_input = input("Enable 24-bit ANSI colors? (y/n) [y]: ").strip().lower()
     is_color = color_input != 'n'
 
-    w_input = input("Ширина в символах (70-160) [100]: ").strip()
+    w_input = input("Width in characters (70-160) [100]: ").strip()
     try:
         width = int(w_input)
     except ValueError:
         width = 100
 
     if choice == "1":
-        file_path = input("Введіть шлях/назву відео: ").strip().strip('"')
+        file_path = input("Enter video file path: ").strip().strip('"')
         play_video(file_path, width=width, color=is_color)
     elif choice == "2":
-        file_path = input("Введіть шлях/назву фото: ").strip().strip('"')
+        file_path = input("Enter photo file path: ").strip().strip('"')
         convert_image(file_path, width=width, color=is_color)
     elif choice == "3":
-        cam_idx = input("Номер камери [0]: ").strip()
+        cam_idx = input("Camera index [0]: ").strip()
         try:
             cam_idx = int(cam_idx)
         except ValueError:

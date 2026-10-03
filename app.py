@@ -12,9 +12,34 @@ from PIL import Image, ImageTk
 import cv2
 import numpy as np
 
-from ascii_engine import AsciiEngine, CHAR_PRESETS, COLOR_MODES
+from ascii_engine import (
+    AsciiEngine,
+    PRESETS_EN,
+    PRESETS_UK,
+    COLOR_MODES_EN,
+    COLOR_MODES_UK,
+)
 from zoom_canvas import ZoomableImageFrame
+from translations import TRANSLATIONS, LANGUAGES
 
+
+# 1. Приховуємо вікно консолі (CMD), якщо програма запущена в графічному режимі
+if sys.platform == "win32":
+    try:
+        import ctypes
+        hwnd = ctypes.windll.kernel32.GetConsoleWindow()
+        if hwnd:
+            ctypes.windll.user32.ShowWindow(hwnd, 0)  # 0 = SW_HIDE
+    except Exception:
+        pass
+
+# 2. Налаштовуємо AppUserModelID для відображення власної іконки на панелі завдань Windows (Taskbar)
+if sys.platform == "win32":
+    try:
+        import ctypes
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("antigravity.asciistudio.pro.1.0")
+    except Exception:
+        pass
 
 # Налаштування теми CustomTkinter
 ctk.set_appearance_mode("Dark")
@@ -40,30 +65,14 @@ def open_video_unicode(video_source):
     return cap
 
 
-# 1. Приховуємо вікно консолі (CMD), якщо програма запущена в графічному режимі
-if sys.platform == "win32":
-    try:
-        import ctypes
-        hwnd = ctypes.windll.kernel32.GetConsoleWindow()
-        if hwnd:
-            ctypes.windll.user32.ShowWindow(hwnd, 0)  # 0 = SW_HIDE
-    except Exception:
-        pass
-
-# 2. Налаштовуємо AppUserModelID для відображення власної іконки на панелі завдань Windows (Taskbar)
-if sys.platform == "win32":
-    try:
-        import ctypes
-        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("antigravity.asciistudio.pro.1.0")
-    except Exception:
-        pass
-
-
 class AsciiStudioApp(ctk.CTk):
     def __init__(self):
         super().__init__()
 
-        self.title("ASCII Studio Pro — Відео, Фото та Вебкамера")
+        # Мова за замовчуванням — Англійська ("en")
+        self.current_lang = "en"
+
+        self.title(self.t("app_title"))
         self.geometry("1300x850")
         self.minsize(980, 680)
 
@@ -131,8 +140,15 @@ class AsciiStudioApp(ctk.CTk):
         # Обробка закриття програми
         self.protocol("WM_DELETE_WINDOW", self.on_close)
 
+    def t(self, key: str, **kwargs) -> str:
+        """Повертає перекладений рядок відповідно до поточної мови."""
+        trans = TRANSLATIONS.get(self.current_lang, TRANSLATIONS["en"])
+        val = trans.get(key, key)
+        if kwargs:
+            val = val.format(**kwargs)
+        return val
+
     def _build_ui(self):
-        # Головна сітка: зліва навігація, по центру робоча зона, праворуч панель налаштувань
         self.grid_columnconfigure(1, weight=1)
         self.grid_rowconfigure(0, weight=1)
 
@@ -150,7 +166,7 @@ class AsciiStudioApp(ctk.CTk):
 
         self.sub_logo_label = ctk.CTkLabel(
             self.sidebar_frame,
-            text="Art & Video Generator",
+            text=self.t("sub_logo"),
             font=ctk.CTkFont(size=12),
             text_color="gray",
         )
@@ -159,7 +175,7 @@ class AsciiStudioApp(ctk.CTk):
         # Кнопки навігації
         self.btn_nav_image = ctk.CTkButton(
             self.sidebar_frame,
-            text="🖼️  Фото",
+            text=self.t("nav_photo"),
             height=40,
             anchor="w",
             font=ctk.CTkFont(size=14, weight="bold"),
@@ -169,7 +185,7 @@ class AsciiStudioApp(ctk.CTk):
 
         self.btn_nav_video = ctk.CTkButton(
             self.sidebar_frame,
-            text="🎬  Відео",
+            text=self.t("nav_video"),
             height=40,
             anchor="w",
             font=ctk.CTkFont(size=14),
@@ -181,7 +197,7 @@ class AsciiStudioApp(ctk.CTk):
 
         self.btn_nav_webcam = ctk.CTkButton(
             self.sidebar_frame,
-            text="📹  Вебкамера",
+            text=self.t("nav_webcam"),
             height=40,
             anchor="w",
             font=ctk.CTkFont(size=14),
@@ -194,7 +210,7 @@ class AsciiStudioApp(ctk.CTk):
         # Швидкий запуск консолі CMD
         self.btn_sidebar_cmd = ctk.CTkButton(
             self.sidebar_frame,
-            text="💻  Консоль (CMD)",
+            text=self.t("nav_cmd"),
             height=36,
             anchor="w",
             font=ctk.CTkFont(size=13),
@@ -204,17 +220,30 @@ class AsciiStudioApp(ctk.CTk):
         )
         self.btn_sidebar_cmd.grid(row=5, column=0, padx=15, pady=(15, 6), sticky="ew")
 
-        # Нижня частина сайдбару
-        self.appearance_label = ctk.CTkLabel(self.sidebar_frame, text="Тема оформлення:", font=ctk.CTkFont(size=11))
-        self.appearance_label.grid(row=7, column=0, padx=20, pady=(10, 0), sticky="w")
+        # Перемикач мови (English / Українська)
+        self.lang_label = ctk.CTkLabel(self.sidebar_frame, text=self.t("lang_label"), font=ctk.CTkFont(size=11))
+        self.lang_label.grid(row=7, column=0, padx=20, pady=(10, 0), sticky="w")
+
+        self.lang_menu = ctk.CTkOptionMenu(
+            self.sidebar_frame,
+            values=["English", "Українська"],
+            command=self.change_language,
+            height=28,
+        )
+        self.lang_menu.set("English")
+        self.lang_menu.grid(row=8, column=0, padx=15, pady=(4, 10), sticky="ew")
+
+        # Перемикач теми
+        self.appearance_label = ctk.CTkLabel(self.sidebar_frame, text=self.t("theme_label"), font=ctk.CTkFont(size=11))
+        self.appearance_label.grid(row=9, column=0, padx=20, pady=(0, 0), sticky="w")
 
         self.appearance_menu = ctk.CTkOptionMenu(
             self.sidebar_frame,
-            values=["Темна", "Світла", "Системна"],
+            values=[self.t("theme_dark"), self.t("theme_light"), self.t("theme_system")],
             command=self.change_appearance_mode,
             height=28,
         )
-        self.appearance_menu.grid(row=8, column=0, padx=15, pady=(4, 20), sticky="ew")
+        self.appearance_menu.grid(row=10, column=0, padx=15, pady=(4, 20), sticky="ew")
 
         # 2. ЦЕНТРАЛЬНА ЗОНА (КОНТЕНТ)
         self.main_container = ctk.CTkFrame(self, fg_color="transparent")
@@ -237,14 +266,14 @@ class AsciiStudioApp(ctk.CTk):
     # ПАНЕЛЬ НАЛАШТУВАНЬ
     # ==========================
     def _build_settings_panel(self):
-        self.settings_frame = ctk.CTkScrollableFrame(self, width=280, label_text="⚙️ Параметри ASCII")
+        self.settings_frame = ctk.CTkScrollableFrame(self, width=280, label_text=self.t("settings_title"))
         self.settings_frame.grid(row=0, column=2, sticky="nsew", padx=(0, 15), pady=15)
         self.settings_frame.grid_columnconfigure(0, weight=1)
 
         # 1. Ширина в символах
         self.lbl_width = ctk.CTkLabel(
             self.settings_frame,
-            text="Ширина: 100 символів",
+            text=self.t("lbl_width", val=100),
             font=ctk.CTkFont(size=13, weight="bold"),
             anchor="w",
         )
@@ -261,14 +290,16 @@ class AsciiStudioApp(ctk.CTk):
         self.slider_width.pack(fill="x", padx=10, pady=(0, 15))
 
         # 2. Пресет символів
-        ctk.CTkLabel(
+        self.lbl_charset_title = ctk.CTkLabel(
             self.settings_frame,
-            text="Набір символів:",
+            text=self.t("lbl_charset"),
             font=ctk.CTkFont(size=13, weight="bold"),
             anchor="w",
-        ).pack(fill="x", padx=10, pady=(0, 2))
+        )
+        self.lbl_charset_title.pack(fill="x", padx=10, pady=(0, 2))
 
-        preset_names = list(CHAR_PRESETS.keys()) + ["Власний набір..."]
+        presets_dict = PRESETS_EN if self.current_lang == "en" else PRESETS_UK
+        preset_names = list(presets_dict.keys()) + [self.t("preset_custom")]
         self.combo_presets = ctk.CTkOptionMenu(
             self.settings_frame,
             values=preset_names,
@@ -279,32 +310,34 @@ class AsciiStudioApp(ctk.CTk):
 
         self.entry_custom_chars = ctk.CTkEntry(
             self.settings_frame,
-            placeholder_text="Введіть власні символи...",
+            placeholder_text=self.t("placeholder_custom_chars"),
         )
-        self.entry_custom_chars.insert(0, CHAR_PRESETS["Стандартний (10 символів)"])
+        self.entry_custom_chars.insert(0, presets_dict[preset_names[0]])
         self.entry_custom_chars.bind("<KeyRelease>", lambda e: self._on_setting_changed())
         self.entry_custom_chars.pack(fill="x", padx=10, pady=(0, 15))
 
         # 3. Колірний режим
-        ctk.CTkLabel(
+        self.lbl_palette_title = ctk.CTkLabel(
             self.settings_frame,
-            text="Колірна палітра:",
+            text=self.t("lbl_palette"),
             font=ctk.CTkFont(size=13, weight="bold"),
             anchor="w",
-        ).pack(fill="x", padx=10, pady=(0, 2))
+        )
+        self.lbl_palette_title.pack(fill="x", padx=10, pady=(0, 2))
 
+        modes_list = COLOR_MODES_EN if self.current_lang == "en" else COLOR_MODES_UK
         self.combo_colors = ctk.CTkOptionMenu(
             self.settings_frame,
-            values=COLOR_MODES,
+            values=modes_list,
             command=lambda val: self._on_setting_changed(),
         )
-        self.combo_colors.set(COLOR_MODES[0])
+        self.combo_colors.set(modes_list[0])
         self.combo_colors.pack(fill="x", padx=10, pady=(0, 15))
 
         # 4. Перемикач інверсії
         self.switch_invert = ctk.CTkSwitch(
             self.settings_frame,
-            text="Інвертувати яскравість",
+            text=self.t("switch_invert"),
             command=self._on_setting_changed,
         )
         self.switch_invert.pack(fill="x", padx=10, pady=(0, 15))
@@ -312,7 +345,7 @@ class AsciiStudioApp(ctk.CTk):
         # 5. Контрастність
         self.lbl_contrast = ctk.CTkLabel(
             self.settings_frame,
-            text="Контраст: 1.0x",
+            text=self.t("lbl_contrast", val=1.0),
             anchor="w",
             font=ctk.CTkFont(size=13),
         )
@@ -331,7 +364,7 @@ class AsciiStudioApp(ctk.CTk):
         # 6. Яскравість
         self.lbl_brightness = ctk.CTkLabel(
             self.settings_frame,
-            text="Яскравість: 0",
+            text=self.t("lbl_brightness", val=0),
             anchor="w",
             font=ctk.CTkFont(size=13),
         )
@@ -350,7 +383,7 @@ class AsciiStudioApp(ctk.CTk):
         # Кнопка скидання налаштувань
         self.btn_reset_settings = ctk.CTkButton(
             self.settings_frame,
-            text="Скинути налаштування",
+            text=self.t("btn_reset_settings"),
             fg_color="gray30",
             hover_color="gray40",
             command=self._reset_settings,
@@ -359,35 +392,39 @@ class AsciiStudioApp(ctk.CTk):
 
     def _reset_settings(self):
         self.slider_width.set(100)
-        self.lbl_width.configure(text="Ширина: 100 символів")
-        self.combo_presets.set(list(CHAR_PRESETS.keys())[0])
+        self.lbl_width.configure(text=self.t("lbl_width", val=100))
+        presets_dict = PRESETS_EN if self.current_lang == "en" else PRESETS_UK
+        first_preset = list(presets_dict.keys())[0]
+        self.combo_presets.set(first_preset)
         self.entry_custom_chars.delete(0, "end")
-        self.entry_custom_chars.insert(0, CHAR_PRESETS["Стандартний (10 символів)"])
-        self.combo_colors.set(COLOR_MODES[0])
+        self.entry_custom_chars.insert(0, presets_dict[first_preset])
+        modes_list = COLOR_MODES_EN if self.current_lang == "en" else COLOR_MODES_UK
+        self.combo_colors.set(modes_list[0])
         self.switch_invert.deselect()
         self.slider_contrast.set(1.0)
-        self.lbl_contrast.configure(text="Контраст: 1.0x")
+        self.lbl_contrast.configure(text=self.t("lbl_contrast", val=1.0))
         self.slider_brightness.set(0)
-        self.lbl_brightness.configure(text="Яскравість: 0")
+        self.lbl_brightness.configure(text=self.t("lbl_brightness", val=0))
         self._on_setting_changed()
 
     def _on_width_changed(self, value):
         val = int(value)
-        self.lbl_width.configure(text=f"Ширина: {val} символів")
+        self.lbl_width.configure(text=self.t("lbl_width", val=val))
         self._on_setting_changed()
 
     def _on_contrast_changed(self, value):
-        self.lbl_contrast.configure(text=f"Контраст: {value:.2f}x")
+        self.lbl_contrast.configure(text=self.t("lbl_contrast", val=value))
         self._on_setting_changed()
 
     def _on_brightness_changed(self, value):
-        self.lbl_brightness.configure(text=f"Яскравість: {int(value)}")
+        self.lbl_brightness.configure(text=self.t("lbl_brightness", val=int(value)))
         self._on_setting_changed()
 
     def _on_preset_changed(self, choice):
-        if choice in CHAR_PRESETS:
+        presets_dict = PRESETS_EN if self.current_lang == "en" else PRESETS_UK
+        if choice in presets_dict:
             self.entry_custom_chars.delete(0, "end")
-            self.entry_custom_chars.insert(0, CHAR_PRESETS[choice])
+            self.entry_custom_chars.insert(0, presets_dict[choice])
         self._on_setting_changed()
 
     def _on_setting_changed(self):
@@ -405,6 +442,92 @@ class AsciiStudioApp(ctk.CTk):
         }
 
     # ==========================
+    # ПЕРЕМИКАННЯ МОВИ
+    # ==========================
+    def change_language(self, lang_name: str):
+        self.current_lang = LANGUAGES.get(lang_name, "en")
+
+        # 1. Заголовок і сайдбар
+        self.title(self.t("app_title"))
+        self.sub_logo_label.configure(text=self.t("sub_logo"))
+        self.btn_nav_image.configure(text=self.t("nav_photo"))
+        self.btn_nav_video.configure(text=self.t("nav_video"))
+        self.btn_nav_webcam.configure(text=self.t("nav_webcam"))
+        self.btn_sidebar_cmd.configure(text=self.t("nav_cmd"))
+        self.lang_label.configure(text=self.t("lang_label"))
+        self.appearance_label.configure(text=self.t("theme_label"))
+        self.appearance_menu.configure(values=[self.t("theme_dark"), self.t("theme_light"), self.t("theme_system")])
+
+        # 2. Панель налаштувань
+        self.settings_frame.configure(label_text=self.t("settings_title"))
+        self.lbl_width.configure(text=self.t("lbl_width", val=int(self.slider_width.get())))
+        self.lbl_charset_title.configure(text=self.t("lbl_charset"))
+
+        presets_dict = PRESETS_EN if self.current_lang == "en" else PRESETS_UK
+        cur_preset_idx = 0
+        preset_names = list(presets_dict.keys()) + [self.t("preset_custom")]
+        self.combo_presets.configure(values=preset_names)
+        self.combo_presets.set(preset_names[cur_preset_idx])
+        self.entry_custom_chars.configure(placeholder_text=self.t("placeholder_custom_chars"))
+
+        self.lbl_palette_title.configure(text=self.t("lbl_palette"))
+        modes_list = COLOR_MODES_EN if self.current_lang == "en" else COLOR_MODES_UK
+        self.combo_colors.configure(values=modes_list)
+        self.combo_colors.set(modes_list[0])
+
+        self.switch_invert.configure(text=self.t("switch_invert"))
+        self.lbl_contrast.configure(text=self.t("lbl_contrast", val=float(self.slider_contrast.get())))
+        self.lbl_brightness.configure(text=self.t("lbl_brightness", val=int(self.slider_brightness.get())))
+        self.btn_reset_settings.configure(text=self.t("btn_reset_settings"))
+
+        # 3. Фото вкладка
+        self.btn_open_img.configure(text=self.t("btn_open_photo"))
+        self.btn_open_cmd.configure(text=self.t("btn_open_cmd"))
+        self.btn_save_png.configure(text=self.t("btn_save_png"))
+        self.btn_save_txt.configure(text=self.t("btn_save_txt"))
+        self.btn_save_html.configure(text=self.t("btn_save_html"))
+        self.btn_copy_text.configure(text=self.t("btn_copy_text"))
+        self.btn_fullscreen_img.configure(text=self.t("btn_fullscreen"))
+
+        self.lbl_text_font.configure(text=self.t("lbl_font_size", val=self.text_font_size))
+        self.btn_reset_font.configure(text=self.t("btn_reset_font"))
+        self.lbl_hint_text_font.configure(text=self.t("hint_text_font"))
+
+        # 4. Відео вкладка
+        self.btn_open_video.configure(text=self.t("btn_open_video"))
+        self.btn_video_cmd.configure(text=self.t("btn_open_cmd"))
+        play_btn_txt = self.t("btn_play") if not self.is_video_playing else self.t("btn_pause")
+        self.btn_play_pause.configure(text=play_btn_txt)
+        self.btn_stop_video.configure(text=self.t("btn_stop"))
+        self.switch_loop.configure(text=self.t("switch_loop"))
+        self.btn_snapshot_video.configure(text=self.t("btn_snapshot_video"))
+
+        # 5. Вебкамера вкладка
+        self.lbl_webcam_cam.configure(text=self.t("lbl_camera"))
+        self.combo_camera_idx.configure(values=[self.t("camera_name", idx=0), self.t("camera_name", idx=1), self.t("camera_name", idx=2)])
+        cam_btn_txt = self.t("btn_start_webcam") if not self.is_webcam_running else self.t("btn_stop_webcam")
+        self.btn_toggle_webcam.configure(text=cam_btn_txt)
+        self.btn_webcam_cmd.configure(text=self.t("btn_open_cmd"))
+        self.btn_snapshot_webcam.configure(text=self.t("btn_snapshot_webcam"))
+
+        # 6. Оновлення полотен
+        expand_txt = self.t("btn_collapse") if self.is_expanded else self.t("btn_expand")
+        for canvas_frame in (self.ascii_canvas, self.orig_canvas, self.video_canvas, self.webcam_canvas):
+            if hasattr(canvas_frame, "update_ui_texts"):
+                canvas_frame.update_ui_texts(
+                    btn_fit=self.t("btn_fit"),
+                    btn_100=self.t("btn_100"),
+                    btn_expand=expand_txt,
+                    hint=self.t("hint_canvas"),
+                )
+
+        self.ascii_canvas.canvas.placeholder_text = self.t("placeholder_photo")
+        self.orig_canvas.canvas.placeholder_text = self.t("placeholder_orig")
+        self.video_canvas.canvas.placeholder_text = self.t("placeholder_video")
+        self.webcam_canvas.canvas.placeholder_text = self.t("placeholder_webcam")
+        self._refit_current_canvas()
+
+    # ==========================
     # РОЗШИРЕННЯ ТА ПОВНИЙ ЕКРАН
     # ==========================
     def toggle_expand_view(self):
@@ -415,19 +538,17 @@ class AsciiStudioApp(ctk.CTk):
             self.sidebar_frame.grid_remove()
             self.settings_frame.grid_remove()
             self.main_container.grid(row=0, column=0, columnspan=3, sticky="nsew", padx=8, pady=8)
-            btn_text = "↩️ Показати панелі"
+            btn_text = self.t("btn_collapse")
         else:
             self.sidebar_frame.grid(row=0, column=0, sticky="nsew")
             self.main_container.grid(row=0, column=1, sticky="nsew", padx=15, pady=15)
             self.settings_frame.grid(row=0, column=2, sticky="nsew", padx=(0, 15), pady=15)
-            btn_text = "⛶ Розширити область"
+            btn_text = self.t("btn_expand")
 
-        # Оновлюємо текст на кнопках розширення у всіх полотнах
         for canvas_frame in (self.ascii_canvas, self.orig_canvas, self.video_canvas, self.webcam_canvas):
             if hasattr(canvas_frame, "set_expand_btn_text"):
                 canvas_frame.set_expand_btn_text(btn_text)
 
-        # Оновлюємо розміри полотен
         self.after(50, self._refit_current_canvas)
 
     def _refit_current_canvas(self):
@@ -461,14 +582,14 @@ class AsciiStudioApp(ctk.CTk):
         try:
             subprocess.Popen(cmd_list, creationflags=creationflags)
         except Exception as e:
-            messagebox.showerror("Помилка", f"Не вдалося відкрити CMD:\n{e}")
+            messagebox.showerror(self.t("dialog_saved_title"), self.t("dialog_cmd_error", err=e))
 
     def launch_cmd_process(self, mode: str, path: str = "", camera: int = 0):
         """Запускає конкретний режим (фото, відео, вебку) у новому вікні CMD."""
         opts = self.get_current_settings()
         script_path = str((Path(__file__).parent / "main.py").resolve())
 
-        is_color = 1 if opts["color_mode"] != "Монохромний (Білий)" else 0
+        is_color = 1 if opts["color_mode"] not in ("Monochrome (White)", "Монохромний (Білий)") else 0
         cmd_list = [
             sys.executable,
             script_path,
@@ -489,15 +610,14 @@ class AsciiStudioApp(ctk.CTk):
         try:
             subprocess.Popen(cmd_list, creationflags=creationflags)
         except Exception as e:
-            messagebox.showerror("Помилка", f"Не вдалося запустити CMD:\n{e}")
+            messagebox.showerror("Error", self.t("dialog_cmd_error", err=e))
 
     def open_image_in_cmd(self):
         if self.current_orig_image is None:
-            messagebox.showwarning("Увага", "Спочатку відкрийте зображення!")
+            messagebox.showwarning("Notice", self.t("dialog_warn_no_img"))
             return
 
         target_path = self.current_image_path
-        # Якщо файл не існує або це знімок, зберігаємо тимчасовий PNG через imencode
         if not target_path or not Path(target_path).exists():
             temp_path = str((Path(__file__).parent / "_cmd_preview.png").resolve())
             _, buf = cv2.imencode(".png", self.current_orig_image)
@@ -508,7 +628,7 @@ class AsciiStudioApp(ctk.CTk):
 
     def open_video_in_cmd(self):
         if not self.current_video_path or not Path(self.current_video_path).exists():
-            messagebox.showwarning("Увага", "Спочатку відкрийте відеофайл!")
+            messagebox.showwarning("Notice", self.t("dialog_warn_no_vid"))
             return
 
         self.pause_video()
@@ -532,17 +652,17 @@ class AsciiStudioApp(ctk.CTk):
         top_bar = ctk.CTkFrame(self.image_view_frame, height=50)
         top_bar.grid(row=0, column=0, sticky="ew", pady=(0, 10))
 
-        btn_open = ctk.CTkButton(
+        self.btn_open_img = ctk.CTkButton(
             top_bar,
-            text="📂 Відкрити фото",
+            text=self.t("btn_open_photo"),
             width=135,
             command=self.open_image_dialog,
         )
-        btn_open.pack(side="left", padx=(10, 4), pady=8)
+        self.btn_open_img.pack(side="left", padx=(10, 4), pady=8)
 
         self.btn_open_cmd = ctk.CTkButton(
             top_bar,
-            text="💻 Відкрити в CMD",
+            text=self.t("btn_open_cmd"),
             width=140,
             state="disabled",
             fg_color="#34495e",
@@ -553,7 +673,7 @@ class AsciiStudioApp(ctk.CTk):
 
         self.btn_save_png = ctk.CTkButton(
             top_bar,
-            text="🖼️ Зберегти PNG",
+            text=self.t("btn_save_png"),
             width=125,
             state="disabled",
             command=self.save_as_png,
@@ -562,7 +682,7 @@ class AsciiStudioApp(ctk.CTk):
 
         self.btn_save_txt = ctk.CTkButton(
             top_bar,
-            text="📄 Зберегти TXT",
+            text=self.t("btn_save_txt"),
             width=125,
             state="disabled",
             command=self.save_as_txt,
@@ -571,7 +691,7 @@ class AsciiStudioApp(ctk.CTk):
 
         self.btn_save_html = ctk.CTkButton(
             top_bar,
-            text="🌐 Експорт в HTML",
+            text=self.t("btn_save_html"),
             width=135,
             state="disabled",
             command=self.save_as_html,
@@ -580,7 +700,7 @@ class AsciiStudioApp(ctk.CTk):
 
         self.btn_copy_text = ctk.CTkButton(
             top_bar,
-            text="📋 Копіювати текст",
+            text=self.t("btn_copy_text"),
             width=135,
             state="disabled",
             fg_color="gray30",
@@ -589,10 +709,9 @@ class AsciiStudioApp(ctk.CTk):
         )
         self.btn_copy_text.pack(side="left", padx=4, pady=8)
 
-        # Кнопка розгортання вікна на повний екран
         self.btn_fullscreen_img = ctk.CTkButton(
             top_bar,
-            text="⛶ Повний екран (F11)",
+            text=self.t("btn_fullscreen"),
             width=150,
             fg_color="gray25",
             hover_color="gray35",
@@ -600,25 +719,25 @@ class AsciiStudioApp(ctk.CTk):
         )
         self.btn_fullscreen_img.pack(side="right", padx=10, pady=8)
 
-        # Таби попереднього перегляду (Графіка / Текст / Оригінал)
+        # Таби попереднього перегляду
         self.image_tabs = ctk.CTkTabview(self.image_view_frame)
         self.image_tabs.grid(row=1, column=0, sticky="nsew")
 
-        tab_render = self.image_tabs.add("🎨 ASCII Рендер (Зум)")
-        tab_text = self.image_tabs.add("📝 Чистий Текст")
-        tab_orig = self.image_tabs.add("🔍 Оригінал (Зум)")
+        tab_render = self.image_tabs.add(self.t("tab_ascii_render"))
+        tab_text = self.image_tabs.add(self.t("tab_plain_text"))
+        tab_orig = self.image_tabs.add(self.t("tab_original"))
 
-        # 1. ASCII Рендер таб із зумованим полотном
+        # 1. ASCII Render tab
         tab_render.grid_columnconfigure(0, weight=1)
         tab_render.grid_rowconfigure(0, weight=1)
         self.ascii_canvas = ZoomableImageFrame(
             tab_render,
-            placeholder_text="Натисніть «Відкрити фото», щоб розпочати 🖼️",
+            placeholder_text=self.t("placeholder_photo"),
             on_expand_toggle=self.toggle_expand_view,
         )
         self.ascii_canvas.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
 
-        # 2. Чистий текст таб з масштабуванням шрифту
+        # 2. Plain Text tab
         tab_text.grid_columnconfigure(0, weight=1)
         tab_text.grid_rowconfigure(1, weight=1)
 
@@ -635,7 +754,7 @@ class AsciiStudioApp(ctk.CTk):
 
         self.lbl_text_font = ctk.CTkLabel(
             text_zoom_bar,
-            text=f"Шрифт: {self.text_font_size} pt",
+            text=self.t("lbl_font_size", val=self.text_font_size),
             width=90,
             font=ctk.CTkFont(size=12, weight="bold"),
         )
@@ -649,22 +768,24 @@ class AsciiStudioApp(ctk.CTk):
             command=lambda: self._change_text_font_size(+1),
         ).pack(side="left", padx=(2, 8), pady=4)
 
-        ctk.CTkButton(
+        self.btn_reset_font = ctk.CTkButton(
             text_zoom_bar,
-            text="Скинути (10 pt)",
+            text=self.t("btn_reset_font"),
             width=110,
             height=26,
             fg_color="gray30",
             hover_color="gray40",
             command=lambda: self._set_text_font_size(10),
-        ).pack(side="left", padx=4, pady=4)
+        )
+        self.btn_reset_font.pack(side="left", padx=4, pady=4)
 
-        ctk.CTkLabel(
+        self.lbl_hint_text_font = ctk.CTkLabel(
             text_zoom_bar,
-            text="💡 Ctrl + Коліщатко миші змінює розмір шрифту",
+            text=self.t("hint_text_font"),
             font=ctk.CTkFont(size=11),
             text_color="gray",
-        ).pack(side="right", padx=12, pady=4)
+        )
+        self.lbl_hint_text_font.pack(side="right", padx=12, pady=4)
 
         self.txt_ascii_display = ctk.CTkTextbox(
             tab_text,
@@ -674,12 +795,12 @@ class AsciiStudioApp(ctk.CTk):
         self.txt_ascii_display.grid(row=1, column=0, sticky="nsew", padx=10, pady=(0, 10))
         self.txt_ascii_display.bind("<Control-MouseWheel>", self._on_text_wheel_zoom)
 
-        # 3. Оригінал таб із зумованим полотном
+        # 3. Original tab
         tab_orig.grid_columnconfigure(0, weight=1)
         tab_orig.grid_rowconfigure(0, weight=1)
         self.orig_canvas = ZoomableImageFrame(
             tab_orig,
-            placeholder_text="Оригінальне фото з'явиться тут",
+            placeholder_text=self.t("placeholder_orig"),
             on_expand_toggle=self.toggle_expand_view,
         )
         self.orig_canvas.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
@@ -690,7 +811,7 @@ class AsciiStudioApp(ctk.CTk):
 
     def _set_text_font_size(self, size: int):
         self.text_font_size = size
-        self.lbl_text_font.configure(text=f"Шрифт: {self.text_font_size} pt")
+        self.lbl_text_font.configure(text=self.t("lbl_font_size", val=self.text_font_size))
         self.txt_ascii_display.configure(font=ctk.CTkFont(family="Consolas", size=self.text_font_size))
 
     def _on_text_wheel_zoom(self, event):
@@ -700,10 +821,10 @@ class AsciiStudioApp(ctk.CTk):
 
     def open_image_dialog(self):
         filetypes = [
-            ("Зображення", "*.png *.jpg *.jpeg *.bmp *.webp *.tiff *.ico"),
-            ("Всі файли", "*.*"),
+            (self.t("filetypes_img"), "*.png *.jpg *.jpeg *.bmp *.webp *.tiff *.ico"),
+            (self.t("filetypes_all"), "*.*"),
         ]
-        file_path = filedialog.askopenfilename(title="Оберіть зображення", filetypes=filetypes)
+        file_path = filedialog.askopenfilename(title=self.t("btn_open_photo"), filetypes=filetypes)
         if not file_path:
             return
 
@@ -723,7 +844,7 @@ class AsciiStudioApp(ctk.CTk):
                 pil_img = Image.open(file_path).convert("RGB")
                 frame = cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
             except Exception as e:
-                messagebox.showerror("Помилка", f"Не вдалося відкрити зображення:\n{e}")
+                messagebox.showerror("Error", self.t("dialog_img_error", err=e))
                 return
 
         self.current_image_path = file_path
@@ -733,14 +854,12 @@ class AsciiStudioApp(ctk.CTk):
         orig_pil = Image.fromarray(orig_rgb)
         self.orig_canvas.set_image(orig_pil, reset_fit=True)
 
-        # Активуємо кнопки збереження та CMD
         self.btn_open_cmd.configure(state="normal")
         self.btn_save_png.configure(state="normal")
         self.btn_save_txt.configure(state="normal")
         self.btn_save_html.configure(state="normal")
         self.btn_copy_text.configure(state="normal")
 
-        # Рендеримо
         self.render_current_image(reset_fit=True)
 
     def render_current_image(self, reset_fit: bool = False):
@@ -763,11 +882,9 @@ class AsciiStudioApp(ctk.CTk):
         self.last_rgb_grid = rgb_grid
         self.last_text_grid = text_grid
 
-        # Відображення тексту
         self.txt_ascii_display.delete("1.0", "end")
         self.txt_ascii_display.insert("1.0", plain_text)
 
-        # Відображаємо в зумованому полотні
         self.ascii_canvas.set_image(rendered_pil, reset_fit=reset_fit)
 
     def save_as_png(self):
@@ -777,14 +894,14 @@ class AsciiStudioApp(ctk.CTk):
         if self.current_image_path:
             default_name = f"{Path(self.current_image_path).stem}_ascii.png"
         path = filedialog.asksaveasfilename(
-            title="Зберегти ASCII як зображення",
+            title=self.t("btn_save_png"),
             defaultextension=".png",
             initialfile=default_name,
             filetypes=[("PNG Image", "*.png"), ("JPEG Image", "*.jpg")],
         )
         if path:
             self.last_rendered_pil.save(path)
-            messagebox.showinfo("Успіх", f"Зображення збережено в:\n{path}")
+            messagebox.showinfo(self.t("dialog_saved_title"), self.t("dialog_saved_msg", path=path))
 
     def save_as_txt(self):
         if not self.last_rendered_text:
@@ -793,15 +910,15 @@ class AsciiStudioApp(ctk.CTk):
         if self.current_image_path:
             default_name = f"{Path(self.current_image_path).stem}_ascii.txt"
         path = filedialog.asksaveasfilename(
-            title="Зберегти ASCII текст",
+            title=self.t("btn_save_txt"),
             defaultextension=".txt",
             initialfile=default_name,
-            filetypes=[("Текстовий файл", "*.txt")],
+            filetypes=[("Text File", "*.txt")],
         )
         if path:
             with open(path, "w", encoding="utf-8") as f:
                 f.write(self.last_rendered_text)
-            messagebox.showinfo("Успіх", f"Текст збережено в:\n{path}")
+            messagebox.showinfo(self.t("dialog_saved_title"), self.t("dialog_saved_msg", path=path))
 
     def save_as_html(self):
         if self.last_text_grid is None or self.last_rgb_grid is None:
@@ -810,21 +927,21 @@ class AsciiStudioApp(ctk.CTk):
         if self.current_image_path:
             default_name = f"{Path(self.current_image_path).stem}_ascii.html"
         path = filedialog.asksaveasfilename(
-            title="Експортувати в HTML",
+            title=self.t("btn_save_html"),
             defaultextension=".html",
             initialfile=default_name,
-            filetypes=[("HTML вебсторінка", "*.html")],
+            filetypes=[("HTML Webpage", "*.html")],
         )
         if path:
             title = Path(path).stem
             AsciiEngine.export_html(self.last_text_grid, self.last_rgb_grid, path, title=title)
-            messagebox.showinfo("Успіх", f"Кольоровий HTML файл збережено:\n{path}")
+            messagebox.showinfo(self.t("dialog_saved_title"), self.t("dialog_saved_msg", path=path))
 
     def copy_ascii_to_clipboard(self):
         if self.last_rendered_text:
             self.clipboard_clear()
             self.clipboard_append(self.last_rendered_text)
-            messagebox.showinfo("Скопійовано", "ASCII текст скопійовано в буфер обміну!")
+            messagebox.showinfo(self.t("dialog_copied_title"), self.t("dialog_copied_msg"))
 
     # ==========================
     # 2. РЕЖИМ ВІДЕО
@@ -838,17 +955,17 @@ class AsciiStudioApp(ctk.CTk):
         top_bar = ctk.CTkFrame(self.video_view_frame, height=50)
         top_bar.grid(row=0, column=0, sticky="ew", pady=(0, 10))
 
-        btn_open = ctk.CTkButton(
+        self.btn_open_video = ctk.CTkButton(
             top_bar,
-            text="📂 Відкрити відео",
+            text=self.t("btn_open_video"),
             width=135,
             command=self.open_video_dialog,
         )
-        btn_open.pack(side="left", padx=8, pady=8)
+        self.btn_open_video.pack(side="left", padx=8, pady=8)
 
         self.btn_video_cmd = ctk.CTkButton(
             top_bar,
-            text="💻 Відкрити в CMD",
+            text=self.t("btn_open_cmd"),
             width=140,
             state="disabled",
             fg_color="#34495e",
@@ -859,7 +976,7 @@ class AsciiStudioApp(ctk.CTk):
 
         self.btn_play_pause = ctk.CTkButton(
             top_bar,
-            text="▶️ Відтворити",
+            text=self.t("btn_play"),
             width=120,
             state="disabled",
             fg_color="#2ecc71",
@@ -870,7 +987,7 @@ class AsciiStudioApp(ctk.CTk):
 
         self.btn_stop_video = ctk.CTkButton(
             top_bar,
-            text="⏹️ Зупинити",
+            text=self.t("btn_stop"),
             width=100,
             state="disabled",
             fg_color="gray30",
@@ -879,13 +996,13 @@ class AsciiStudioApp(ctk.CTk):
         )
         self.btn_stop_video.pack(side="left", padx=4, pady=8)
 
-        self.switch_loop = ctk.CTkSwitch(top_bar, text="Зациклити")
+        self.switch_loop = ctk.CTkSwitch(top_bar, text=self.t("switch_loop"))
         self.switch_loop.select()
         self.switch_loop.pack(side="left", padx=10, pady=8)
 
         self.btn_snapshot_video = ctk.CTkButton(
             top_bar,
-            text="📸 Зберегти кадр",
+            text=self.t("btn_snapshot_video"),
             width=135,
             state="disabled",
             command=self.save_video_snapshot,
@@ -915,17 +1032,17 @@ class AsciiStudioApp(ctk.CTk):
         # Дисплей відео з інтерактивним зумом
         self.video_canvas = ZoomableImageFrame(
             self.video_view_frame,
-            placeholder_text="Відкрийте відеофайл (MP4, AVI, MOV...), щоб переглянути його в ASCII 🎬",
+            placeholder_text=self.t("placeholder_video"),
             on_expand_toggle=self.toggle_expand_view,
         )
         self.video_canvas.grid(row=2, column=0, sticky="nsew")
 
     def open_video_dialog(self):
         filetypes = [
-            ("Відеофайли", "*.mp4 *.avi *.mkv *.mov *.wmv *.webm *.flv"),
-            ("Всі файли", "*.*"),
+            (self.t("filetypes_vid"), "*.mp4 *.avi *.mkv *.mov *.wmv *.webm *.flv"),
+            (self.t("filetypes_all"), "*.*"),
         ]
-        file_path = filedialog.askopenfilename(title="Оберіть відео", filetypes=filetypes)
+        file_path = filedialog.askopenfilename(title=self.t("btn_open_video"), filetypes=filetypes)
         if not file_path:
             return
 
@@ -936,7 +1053,7 @@ class AsciiStudioApp(ctk.CTk):
 
         self.video_cap = open_video_unicode(file_path)
         if not self.video_cap.isOpened():
-            messagebox.showerror("Помилка", f"Не вдалося відкрити відео:\n{file_path}")
+            messagebox.showerror("Error", self.t("dialog_vid_error", err=file_path))
             return
 
         self.current_video_path = file_path
@@ -953,7 +1070,6 @@ class AsciiStudioApp(ctk.CTk):
         self.btn_stop_video.configure(state="normal")
         self.btn_snapshot_video.configure(state="normal")
 
-        # Читаємо та рендеримо перший кадр
         ret, frame = self.video_cap.read()
         if ret:
             self._render_single_video_frame(frame, reset_fit=True)
@@ -969,7 +1085,7 @@ class AsciiStudioApp(ctk.CTk):
         if self.video_cap is None:
             return
         self.is_video_playing = True
-        self.btn_play_pause.configure(text="⏸️ Пауза", fg_color="#e67e22", hover_color="#d35400")
+        self.btn_play_pause.configure(text=self.t("btn_pause"), fg_color="#e67e22", hover_color="#d35400")
 
         if self.video_thread is None or not self.video_thread.is_alive():
             self.video_thread = threading.Thread(target=self._video_worker, daemon=True)
@@ -977,13 +1093,13 @@ class AsciiStudioApp(ctk.CTk):
 
     def pause_video(self):
         self.is_video_playing = False
-        self.btn_play_pause.configure(text="▶️ Продовжити", fg_color="#2ecc71", hover_color="#27ae60")
+        self.btn_play_pause.configure(text=self.t("btn_resume"), fg_color="#2ecc71", hover_color="#27ae60")
 
     def stop_video(self):
         self.is_video_playing = False
         if self.video_cap is not None:
             self.video_cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-        self.btn_play_pause.configure(text="▶️ Відтворити", fg_color="#2ecc71", hover_color="#27ae60")
+        self.btn_play_pause.configure(text=self.t("btn_play"), fg_color="#2ecc71", hover_color="#27ae60")
         self.slider_timeline.set(0)
         self.lbl_video_time.configure(text="00:00 / 00:00")
 
@@ -1075,14 +1191,14 @@ class AsciiStudioApp(ctk.CTk):
     def save_video_snapshot(self):
         if hasattr(self, "last_video_frame_pil") and self.last_video_frame_pil:
             path = filedialog.asksaveasfilename(
-                title="Зберегти поточний кадр",
+                title=self.t("btn_snapshot_video"),
                 defaultextension=".png",
                 initialfile="video_frame_ascii.png",
                 filetypes=[("PNG Image", "*.png")],
             )
             if path:
                 self.last_video_frame_pil.save(path)
-                messagebox.showinfo("Збережено", f"Кадр збережено:\n{path}")
+                messagebox.showinfo(self.t("dialog_saved_title"), self.t("dialog_saved_msg", path=path))
 
     # ==========================
     # 3. РЕЖИМ ВЕБКАМЕРИ
@@ -1096,20 +1212,21 @@ class AsciiStudioApp(ctk.CTk):
         top_bar = ctk.CTkFrame(self.webcam_view_frame, height=50)
         top_bar.grid(row=0, column=0, sticky="ew", pady=(0, 10))
 
-        ctk.CTkLabel(top_bar, text="Камера:").pack(side="left", padx=(10, 5), pady=8)
+        self.lbl_webcam_cam = ctk.CTkLabel(top_bar, text=self.t("lbl_camera"))
+        self.lbl_webcam_cam.pack(side="left", padx=(10, 5), pady=8)
 
         self.combo_camera_idx = ctk.CTkOptionMenu(
             top_bar,
-            values=["Камера 0", "Камера 1", "Камера 2"],
+            values=[self.t("camera_name", idx=0), self.t("camera_name", idx=1), self.t("camera_name", idx=2)],
             width=110,
             command=self._on_camera_select,
         )
-        self.combo_camera_idx.set("Камера 0")
+        self.combo_camera_idx.set(self.t("camera_name", idx=0))
         self.combo_camera_idx.pack(side="left", padx=5, pady=8)
 
         self.btn_toggle_webcam = ctk.CTkButton(
             top_bar,
-            text="🟢 Запустити камеру",
+            text=self.t("btn_start_webcam"),
             width=165,
             fg_color="#2ecc71",
             hover_color="#27ae60",
@@ -1119,7 +1236,7 @@ class AsciiStudioApp(ctk.CTk):
 
         self.btn_webcam_cmd = ctk.CTkButton(
             top_bar,
-            text="💻 Відкрити в CMD",
+            text=self.t("btn_open_cmd"),
             width=140,
             fg_color="#34495e",
             hover_color="#2c3e50",
@@ -1129,7 +1246,7 @@ class AsciiStudioApp(ctk.CTk):
 
         self.btn_snapshot_webcam = ctk.CTkButton(
             top_bar,
-            text="📸 Зробити знімок",
+            text=self.t("btn_snapshot_webcam"),
             width=140,
             state="disabled",
             command=self.take_webcam_snapshot,
@@ -1142,7 +1259,7 @@ class AsciiStudioApp(ctk.CTk):
         # Дисплей вебкамери із зумом
         self.webcam_canvas = ZoomableImageFrame(
             self.webcam_view_frame,
-            placeholder_text="Натисніть «Запустити камеру» для ASCII стрімінгу в реальному часі 📹",
+            placeholder_text=self.t("placeholder_webcam"),
             on_expand_toggle=self.toggle_expand_view,
         )
         self.webcam_canvas.grid(row=1, column=0, sticky="nsew")
@@ -1168,12 +1285,12 @@ class AsciiStudioApp(ctk.CTk):
         if not self.webcam_cap.isOpened():
             self.webcam_cap = cv2.VideoCapture(self.camera_index)
             if not self.webcam_cap.isOpened():
-                messagebox.showerror("Помилка", f"Не вдалося відкрити вебкамеру #{self.camera_index}!")
+                messagebox.showerror("Error", self.t("dialog_cam_error", idx=self.camera_index))
                 return
 
         self.is_webcam_running = True
         self.btn_toggle_webcam.configure(
-            text="🔴 Зупинити камеру",
+            text=self.t("btn_stop_webcam"),
             fg_color="#e74c3c",
             hover_color="#c0392b",
         )
@@ -1189,7 +1306,7 @@ class AsciiStudioApp(ctk.CTk):
             self.webcam_cap.release()
             self.webcam_cap = None
         self.btn_toggle_webcam.configure(
-            text="🟢 Запустити камеру",
+            text=self.t("btn_start_webcam"),
             fg_color="#2ecc71",
             hover_color="#27ae60",
         )
@@ -1256,7 +1373,7 @@ class AsciiStudioApp(ctk.CTk):
 
         self.switch_mode("image")
         self.render_current_image(reset_fit=True)
-        messagebox.showinfo("Знімок готовий", "Знімок з вебкамери успішно перенесено у вкладку «Фото»! Тепер його можна масштабувати, налаштувати, зберегти або відкрити в CMD.")
+        messagebox.showinfo(self.t("dialog_snap_title"), self.t("dialog_snap_msg"))
 
     # ==========================
     # ПЕРЕМИКАННЯ РЕЖИМІВ
@@ -1264,7 +1381,6 @@ class AsciiStudioApp(ctk.CTk):
     def switch_mode(self, mode: str):
         self.current_mode = mode
 
-        # Оновлення кнопок сайдбару
         self.btn_nav_image.configure(
             fg_color=("gray75", "gray25") if mode == "image" else "transparent",
             font=ctk.CTkFont(size=14, weight="bold" if mode == "image" else "normal"),
@@ -1278,12 +1394,10 @@ class AsciiStudioApp(ctk.CTk):
             font=ctk.CTkFont(size=14, weight="bold" if mode == "webcam" else "normal"),
         )
 
-        # Ховаємо всі контейнери
         self.image_view_frame.grid_forget()
         self.video_view_frame.grid_forget()
         self.webcam_view_frame.grid_forget()
 
-        # Показуємо обраний
         if mode == "image":
             self.image_view_frame.grid(row=0, column=0, sticky="nsew")
         elif mode == "video":
@@ -1291,9 +1405,17 @@ class AsciiStudioApp(ctk.CTk):
         elif mode == "webcam":
             self.webcam_view_frame.grid(row=0, column=0, sticky="nsew")
 
-    def change_appearance_mode(self, mode: str):
-        mode_map = {"Темна": "Dark", "Світла": "Light", "Системна": "System"}
-        chosen = mode_map.get(mode, "Dark")
+    def change_appearance_mode(self, mode_text: str):
+        # Визначаємо вибраний режим за значенням
+        dark_keys = (self.t("theme_dark"), "Dark", "Темна")
+        light_keys = (self.t("theme_light"), "Light", "Світла")
+        if mode_text in dark_keys:
+            chosen = "Dark"
+        elif mode_text in light_keys:
+            chosen = "Light"
+        else:
+            chosen = "System"
+
         ctk.set_appearance_mode(chosen)
         is_dark = (chosen == "Dark")
         if hasattr(self, "ascii_canvas"):

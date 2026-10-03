@@ -283,8 +283,8 @@ class ZoomableImageFrame(ctk.CTkFrame):
         # Кнопка Fit
         self.btn_fit = ctk.CTkButton(
             self.toolbar,
-            text="↔️ За розміром",
-            width=110,
+            text="↔️ Fit",
+            width=80,
             height=26,
             fg_color="gray30",
             hover_color="gray40",
@@ -308,8 +308,8 @@ class ZoomableImageFrame(ctk.CTkFrame):
         if self.on_expand_toggle:
             self.btn_expand = ctk.CTkButton(
                 self.toolbar,
-                text="⛶ Розширити область",
-                width=150,
+                text="⛶ Expand Canvas",
+                width=140,
                 height=26,
                 fg_color="#2980b9",
                 hover_color="#3498db",
@@ -320,7 +320,7 @@ class ZoomableImageFrame(ctk.CTkFrame):
         # Підказка
         self.lbl_hint = ctk.CTkLabel(
             self.toolbar,
-            text="💡 Коліщатко: зум | Затисніть ЛКМ: переміщення | Подвійний клік: Fit",
+            text="💡 Wheel: zoom | Drag LMB: pan | Double-click: Fit",
             font=ctk.CTkFont(size=11),
             text_color="gray",
         )
@@ -330,6 +330,20 @@ class ZoomableImageFrame(ctk.CTkFrame):
         if hasattr(self, "btn_expand"):
             self.btn_expand.configure(text=text)
 
+    def update_ui_texts(self, btn_fit="↔️ Fit", btn_100="1:1 (100%)", btn_expand="⛶ Expand Canvas", hint=None, placeholder=None):
+        if hasattr(self, "btn_fit"):
+            self.btn_fit.configure(text=btn_fit)
+        if hasattr(self, "btn_100"):
+            self.btn_100.configure(text=btn_100)
+        if hasattr(self, "btn_expand") and btn_expand:
+            self.btn_expand.configure(text=btn_expand)
+        if hasattr(self, "lbl_hint") and hint:
+            self.lbl_hint.configure(text=hint)
+        if placeholder:
+            self.canvas.placeholder_text = placeholder
+            if self.canvas.pil_img is None:
+                self.canvas.redraw()
+
     def set_image(self, pil_image: Image.Image, reset_fit: bool = False):
         self.canvas.set_image(pil_image, reset_fit=reset_fit)
 
@@ -338,5 +352,7 @@ class ZoomableImageFrame(ctk.CTkFrame):
 
     def _update_zoom_label(self, scale: float, is_fit: bool):
         pct = int(scale * 100)
+        fit_suffix = " (Fit)" if is_fit else ""
+        self.lbl_zoom.configure(text=f"{pct}%{fit_suffix}")
         fit_suffix = " (Fit)" if is_fit else ""
         self.lbl_zoom.configure(text=f"{pct}%{fit_suffix}")
