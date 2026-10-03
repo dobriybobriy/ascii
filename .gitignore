@@ -1,0 +1,29 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Temporary outputs & test preview files
+_cmd_preview.png
+_test_*.png
+_test_*.mp4
+ascii_photo.txt
+*.tmp
+
+# Virtual environments
+.env
+.venv
+env/
+venv/
+ENV/
+
+# IDE & Editor settings
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# Windows system files
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
