@@ -84,10 +84,12 @@ class AsciiEngine:
             img = Image.new("L", (self._char_w, self._char_h), 0)
             draw = ImageDraw.Draw(img)
             draw.text((0, 0), ch, fill=255, font=self._font)
-            mask = np.array(img) > 70
+            arr = np.array(img, dtype=np.uint8)
+            # 8-бітний бінарний масив (0 або 255) для миттєвого blit через cv2.copyTo
+            mask = np.where(arr > 70, np.uint8(255), np.uint8(0))
             masks.append(mask)
 
-        self._masks = np.array(masks, dtype=bool)
+        self._masks = np.array(masks, dtype=np.uint8)
 
     def process_frame(
         self,
@@ -99,12 +101,15 @@ class AsciiEngine:
         brightness: int = 0,
         invert: bool = False,
         bg_color: tuple = (16, 16, 20),
+        generate_text: bool = True,
     ):
         """
-        Обробляє BGR кадр OpenCV і повертає:
+        Високопродуктивна обробка кадру з повною SIMD-оптимізацією (cv2, numpy).
+        Повертає:
         1. PIL.Image (графічний рендер ASCII арт з вибраним кольоровим режимом)
-        2. str (чистий текст)
-        3. np.ndarray (RGB кольори для кожного символу для HTML експорту)
+        2. str (чистий текст або порожній рядок, якщо generate_text=False)
+        3. np.ndarray (RGB сітка для кожного символу)
+        4. np.ndarray (сітка символів для експорту в HTML)
         """
         if not char_set:
             char_set = " .:-=+*#%@"
@@ -113,84 +118,78 @@ class AsciiEngine:
         num_chars = len(char_set)
 
         orig_h, orig_w = frame_bgr.shape[:2]
-        # Символи витягнуті вертикально (~1.7:1), тому коригуємо aspect ratio
-        char_ratio = self._char_h / self._char_w  # приблизно 1.6 - 1.8
+        char_ratio = self._char_h / self._char_w
         target_w = max(10, width)
         target_h = max(5, int(target_w * (orig_h / orig_w) / char_ratio))
 
-        # Зменшуємо кадр під сітку символів
+        # 1. Зменшуємо кадр під сітку символів
         small_bgr = cv2.resize(frame_bgr, (target_w, target_h), interpolation=cv2.INTER_AREA)
 
-        # Корекція яскравості та контрасту
+        # 2. Корекція яскравості та контрасту
         if contrast != 1.0 or brightness != 0:
             small_bgr = np.clip(contrast * small_bgr.astype(np.float32) + brightness, 0, 255).astype(np.uint8)
 
-        # Конвертація в RGB
+        # 3. Конвертація в RGB та Gray
         small_rgb = cv2.cvtColor(small_bgr, cv2.COLOR_BGR2RGB)
-
-        # Отримуємо яскравість (Grayscale)
         gray = cv2.cvtColor(small_bgr, cv2.COLOR_BGR2GRAY)
 
         if invert:
             gray = 255 - gray
 
-        # Розрахунок індексів символів
-        indices = (gray.astype(np.float32) / 255.0 * (num_chars - 1)).clip(0, num_chars - 1).astype(np.int32)
+        # 4. Швидкий розрахунок індексів символів
+        indices = (gray.astype(np.float32) * ((num_chars - 1) / 255.0)).astype(np.int32).clip(0, num_chars - 1)
 
-        # 1. Формуємо текстовий рядок
+        # 5. Опціональна генерація текстового рядка (економить час під час стрімінгу відео)
+        plain_text = ""
+        text_grid = None
         char_arr = np.array(list(char_set))
-        text_grid = char_arr[indices]
-        text_lines = ["".join(row) for row in text_grid]
-        plain_text = "\n".join(text_lines)
+        if generate_text:
+            text_grid = char_arr[indices]
+            text_lines = ["".join(row) for row in text_grid]
+            plain_text = "\n".join(text_lines)
+        else:
+            text_grid = char_arr[indices]
 
-        # 2. Рендеримо зображення через векторизований масочний бліттінг
+        # 6. Розрахунок колірної палітри на МАЛІЙ сітці (у 80+ разів швидше, ніж на розгорнутій)
+        if "Color" in color_mode or "Колір" in color_mode or "RGB" in color_mode:
+            palette_small = small_rgb
+        elif "Monochrome" in color_mode or "Монохром" in color_mode or "White" in color_mode or "Білий" in color_mode:
+            palette_small = cv2.cvtColor(gray, cv2.COLOR_GRAY2RGB)
+        elif "Matrix" in color_mode or "Матриця" in color_mode or "Green" in color_mode or "Зелен" in color_mode:
+            g = np.clip(gray.astype(np.int16) + 40, 0, 255).astype(np.uint8)
+            r = (gray * 0.15).astype(np.uint8)
+            b = (gray * 0.25).astype(np.uint8)
+            palette_small = np.stack([r, g, b], axis=-1)
+        elif "Retro" in color_mode or "Amber" in color_mode or "Ретро" in color_mode or "Бурштин" in color_mode:
+            r = gray
+            g = (gray * 0.7).astype(np.uint8)
+            b = (gray * 0.1).astype(np.uint8)
+            palette_small = np.stack([r, g, b], axis=-1)
+        elif "Cyberpunk" in color_mode or "Neon" in color_mode or "Кіберпанк" in color_mode or "Неон" in color_mode:
+            r = np.clip(gray.astype(np.float32) * 1.1, 0, 255).astype(np.uint8)
+            g = (gray * 0.3).astype(np.uint8)
+            b = np.clip(gray.astype(np.float32) * 1.3, 0, 255).astype(np.uint8)
+            palette_small = np.stack([r, g, b], axis=-1)
+        elif "Sepia" in color_mode or "Сепія" in color_mode or "Vintage" in color_mode or "Вінтаж" in color_mode:
+            r = np.clip(gray.astype(np.float32) * 1.1, 0, 255).astype(np.uint8)
+            g = np.clip(gray.astype(np.float32) * 0.9, 0, 255).astype(np.uint8)
+            b = np.clip(gray.astype(np.float32) * 0.7, 0, 255).astype(np.uint8)
+            palette_small = np.stack([r, g, b], axis=-1)
+        else:
+            palette_small = small_rgb
+
+        # 7. Швидке масштабування кольорів через апаратний SIMD (INTER_NEAREST)
         out_h = target_h * self._char_h
         out_w = target_w * self._char_w
+        grid_colors = cv2.resize(palette_small, (out_w, out_h), interpolation=cv2.INTER_NEAREST)
 
-        # Розгортаємо маски під кожну позицію
-        grid_masks = self._masks[indices].transpose(0, 2, 1, 3).reshape(out_h, out_w)
+        # 8. Складання маски символів
+        grid_masks = np.ascontiguousarray(self._masks[indices].transpose(0, 2, 1, 3).reshape(out_h, out_w))
 
-        # Визначаємо колірні шари
-        rendered_img = np.full((out_h, out_w, 3), bg_color, dtype=np.uint8)
-
-        if "Color" in color_mode or "Колір" in color_mode or "RGB" in color_mode:
-            grid_colors = np.repeat(np.repeat(small_rgb, self._char_h, axis=0), self._char_w, axis=1)
-            rendered_img[grid_masks] = grid_colors[grid_masks]
-
-        elif "Monochrome" in color_mode or "Монохром" in color_mode or "White" in color_mode or "Білий" in color_mode:
-            val = np.repeat(np.repeat(gray, self._char_h, axis=0), self._char_w, axis=1)
-            rendered_img[grid_masks] = np.stack([val, val, val], axis=-1)[grid_masks]
-
-        elif "Matrix" in color_mode or "Матриця" in color_mode or "Green" in color_mode or "Зелен" in color_mode:
-            val = np.repeat(np.repeat(gray, self._char_h, axis=0), self._char_w, axis=1)
-            g = np.clip(val.astype(np.int16) + 40, 0, 255).astype(np.uint8)
-            r = (val * 0.15).astype(np.uint8)
-            b = (val * 0.25).astype(np.uint8)
-            rendered_img[grid_masks] = np.stack([r, g, b], axis=-1)[grid_masks]
-
-        elif "Retro" in color_mode or "Amber" in color_mode or "Ретро" in color_mode or "Бурштин" in color_mode:
-            val = np.repeat(np.repeat(gray, self._char_h, axis=0), self._char_w, axis=1)
-            r = val
-            g = (val * 0.7).astype(np.uint8)
-            b = (val * 0.1).astype(np.uint8)
-            rendered_img[grid_masks] = np.stack([r, g, b], axis=-1)[grid_masks]
-
-        elif "Cyberpunk" in color_mode or "Neon" in color_mode or "Кіберпанк" in color_mode or "Неон" in color_mode:
-            val = np.repeat(np.repeat(gray, self._char_h, axis=0), self._char_w, axis=1)
-            r = np.clip(val * 1.1, 0, 255).astype(np.uint8)
-            g = (val * 0.3).astype(np.uint8)
-            b = np.clip(val * 1.3, 0, 255).astype(np.uint8)
-            rendered_img[grid_masks] = np.stack([r, g, b], axis=-1)[grid_masks]
-
-        elif "Sepia" in color_mode or "Сепія" in color_mode or "Vintage" in color_mode or "Вінтаж" in color_mode:
-            val = np.repeat(np.repeat(gray, self._char_h, axis=0), self._char_w, axis=1)
-            r = np.clip(val * 1.1, 0, 255).astype(np.uint8)
-            g = np.clip(val * 0.9, 0, 255).astype(np.uint8)
-            b = np.clip(val * 0.7, 0, 255).astype(np.uint8)
-            rendered_img[grid_masks] = np.stack([r, g, b], axis=-1)[grid_masks]
-        else:
-            grid_colors = np.repeat(np.repeat(small_rgb, self._char_h, axis=0), self._char_w, axis=1)
-            rendered_img[grid_masks] = grid_colors[grid_masks]
+        # 9. Миттєвий бліттінг через оптимізований cv2.copyTo
+        rendered_img = np.empty((out_h, out_w, 3), dtype=np.uint8)
+        rendered_img[:] = bg_color
+        cv2.copyTo(grid_colors, grid_masks, rendered_img)
 
         pil_image = Image.fromarray(rendered_img)
         return pil_image, plain_text, small_rgb, text_grid

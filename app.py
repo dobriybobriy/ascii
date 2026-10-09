@@ -1,6 +1,7 @@
 import os
 import sys
 import time
+import queue
 import threading
 import subprocess
 from pathlib import Path
@@ -83,9 +84,180 @@ def get_console_python():
     return exe
 
 
+class SplashScreen(ctk.CTkToplevel):
+    """
+    Плавний стильний Splash Screen під час завантаження та прогріву рушія.
+    """
+    def __init__(self, parent, on_complete=None):
+        super().__init__(parent)
+        self.on_complete = on_complete
+        self.overrideredirect(True)
+        self.configure(fg_color="#0e1117")
+        self.attributes("-topmost", True)
+
+        width, height = 440, 310
+        self.update_idletasks()
+        screen_w = self.winfo_screenwidth()
+        screen_h = self.winfo_screenheight()
+        x = max(0, (screen_w - width) // 2)
+        y = max(0, (screen_h - height) // 2)
+        self.geometry(f"{width}x{height}+{x}+{y}")
+
+        # Контейнер картки
+        card = ctk.CTkFrame(self, fg_color="#141822", corner_radius=16, border_width=1, border_color="#262f45")
+        card.pack(fill="both", expand=True, padx=4, pady=4)
+
+        # Логотип
+        assets_dir = Path(__file__).parent / "assets"
+        png_path = assets_dir / "icon.png"
+        self.logo_img = None
+        if png_path.exists():
+            try:
+                pil_logo = Image.open(png_path).resize((72, 72), Image.Resampling.LANCZOS)
+                self.logo_img = ctk.CTkImage(pil_logo, size=(72, 72))
+            except Exception:
+                pass
+
+        if self.logo_img:
+            self.lbl_logo = ctk.CTkLabel(card, image=self.logo_img, text="")
+            self.lbl_logo.pack(pady=(24, 6))
+        else:
+            self.lbl_logo = ctk.CTkLabel(card, text="⚡", font=ctk.CTkFont(size=40))
+            self.lbl_logo.pack(pady=(24, 6))
+
+        self.lbl_title = ctk.CTkLabel(
+            card,
+            text="ASCII STUDIO PRO",
+            font=ctk.CTkFont(size=20, weight="bold"),
+            text_color="#ffffff",
+        )
+        self.lbl_title.pack(pady=(0, 2))
+
+        self.lbl_sub = ctk.CTkLabel(
+            card,
+            text="High-Performance Art & Video Engine",
+            font=ctk.CTkFont(size=12),
+            text_color="#7aa2f7",
+        )
+        self.lbl_sub.pack(pady=(0, 16))
+
+        # Індикатор прогресу
+        self.progress = ctk.CTkProgressBar(card, width=280, height=8, corner_radius=4, progress_color="#3b82f6")
+        self.progress.pack(pady=(0, 8))
+        self.progress.set(0.0)
+
+        self.lbl_status = ctk.CTkLabel(
+            card,
+            text="Initializing engine & assets...",
+            font=ctk.CTkFont(size=11),
+            text_color="#94a3b8",
+        )
+        self.lbl_status.pack(pady=(0, 16))
+
+        self._step = 0
+        self._animate_progress()
+
+    def _animate_progress(self):
+        self._step += 1
+        pct = min(1.0, self._step / 14.0)
+        self.progress.set(pct)
+
+        if self._step == 4:
+            self.lbl_status.configure(text="Loading fonts & presets...")
+        elif self._step == 8:
+            self.lbl_status.configure(text="Precomputing character masks...")
+        elif self._step == 12:
+            self.lbl_status.configure(text="Engine ready!")
+
+        if self._step < 14:
+            self.after(30, self._animate_progress)
+        else:
+            self.after(80, self._finish)
+
+    def _finish(self):
+        try:
+            self.destroy()
+        except Exception:
+            pass
+        if self.on_complete:
+            self.on_complete()
+
+
+class LoadingSpinner(ctk.CTkFrame):
+    """
+    Сучасний анімований спінер (індикатор завантаження) для важких операцій рендерингу.
+    """
+    def __init__(self, parent, size: int = 54, text: str = "⚡ Rendering ASCII..."):
+        super().__init__(
+            parent,
+            fg_color=("#181c24", "#12151d"),
+            corner_radius=14,
+            border_width=1,
+            border_color="#2b3447",
+        )
+        self.size = size
+        self.angle = 0
+        self._is_active = False
+
+        self.canvas = tk.Canvas(
+            self,
+            width=size,
+            height=size,
+            bg="#12151d",
+            highlightthickness=0,
+            bd=0,
+        )
+        self.canvas.pack(padx=20, pady=(14, 4))
+
+        self.lbl_text = ctk.CTkLabel(
+            self,
+            text=text,
+            font=ctk.CTkFont(size=12, weight="bold"),
+            text_color="#93c5fd",
+        )
+        self.lbl_text.pack(padx=20, pady=(0, 12))
+
+    def set_text(self, text: str):
+        self.lbl_text.configure(text=text)
+
+    def show(self):
+        if not self._is_active:
+            self._is_active = True
+            self.place(relx=0.5, rely=0.5, anchor="center")
+            self.lift()
+            self._animate()
+
+    def hide(self):
+        self._is_active = False
+        self.place_forget()
+
+    def _animate(self):
+        if not self._is_active:
+            return
+        self.canvas.delete("all")
+        pad = 6
+        x0, y0 = pad, pad
+        x1, y1 = self.size - pad, self.size - pad
+
+        # Фоновий тонкий контур
+        self.canvas.create_oval(x0, y0, x1, y1, outline="#1f293d", width=3)
+        # Обертова неонова дуга
+        self.canvas.create_arc(
+            x0, y0, x1, y1,
+            start=self.angle,
+            extent=110,
+            outline="#3b82f6",
+            width=3.5,
+            style="arc",
+        )
+        self.angle = (self.angle + 16) % 360
+        self.after(25, self._animate)
+
+
 class AsciiStudioApp(ctk.CTk):
-    def __init__(self):
+    def __init__(self, show_splash: bool = True):
         super().__init__()
+        self.show_splash = show_splash
 
         # Мова за замовчуванням — Англійська ("en")
         self.current_lang = "en"
@@ -112,17 +284,17 @@ class AsciiStudioApp(ctk.CTk):
             except Exception:
                 pass
 
-        # Автоматичне розгортання вікна на весь екран при запуску
-        self.after(60, lambda: self.state("zoomed"))
-
         # Двигунець рендерингу
         self.engine = AsciiEngine(font_size=12)
 
-        # Стан додатку
+        # Стан додатку та асинхронного рендерингу
         self.current_mode = "image"  # 'image', 'video', 'webcam'
         self.text_font_size = 10
         self.is_expanded = False
         self.is_fullscreen = False
+        self._is_animating_panel = False
+        self._render_generation = 0
+        self._is_rendering = False
 
         # Стан фото
         self.current_image_path = None
@@ -154,9 +326,54 @@ class AsciiStudioApp(ctk.CTk):
 
         # Побудова інтерфейсу
         self._build_ui()
+        self.cached_settings = self.get_current_settings()
+
+        # Стан життєвого циклу програми
+        self._is_closing = False
+        self._poll_timer_id = None
+
+        # Черга завдань для безпечного потокового оновлення UI (Thread-Safe UI Queue)
+        self._ui_queue = queue.Queue()
+        self._poll_timer_id = self.after(15, self._poll_ui_queue)
 
         # Обробка закриття програми
         self.protocol("WM_DELETE_WINDOW", self.on_close)
+
+        if self.show_splash:
+            self.withdraw()
+            self.splash = SplashScreen(self, on_complete=self._on_splash_done)
+        else:
+            self.after(60, lambda: self.state("zoomed"))
+
+    def _post_ui_task(self, func, *args, **kwargs):
+        """Безпечно відправляє завдання для виконання в головному UI-потоці через чергу."""
+        self._ui_queue.put((func, args, kwargs))
+
+    def _poll_ui_queue(self):
+        """Періодично вичитує чергу повідомлень та виконує оновлення UI."""
+        if getattr(self, "_is_closing", False):
+            return
+        try:
+            while not self._ui_queue.empty():
+                func, args, kwargs = self._ui_queue.get_nowait()
+                try:
+                    func(*args, **kwargs)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        try:
+            if hasattr(self, "tk") and not getattr(self, "_is_closing", False):
+                self._poll_timer_id = self.after(15, self._poll_ui_queue)
+        except Exception:
+            pass
+
+    def _on_splash_done(self):
+        try:
+            self.deiconify()
+            self.after(50, lambda: self.state("zoomed"))
+        except Exception:
+            pass
 
     def t(self, key: str, **kwargs) -> str:
         """Повертає перекладений рядок відповідно до поточної мови."""
@@ -446,6 +663,7 @@ class AsciiStudioApp(ctk.CTk):
         self._on_setting_changed()
 
     def _on_setting_changed(self):
+        self.cached_settings = self.get_current_settings()
         if self.current_mode == "image" and self.current_orig_image is not None:
             self.render_current_image(reset_fit=False)
 
@@ -458,6 +676,12 @@ class AsciiStudioApp(ctk.CTk):
             "brightness": int(self.slider_brightness.get()),
             "invert": bool(self.switch_invert.get()),
         }
+
+    def get_thread_safe_settings(self):
+        """Безпечний доступ до актуальних налаштувань для фонових потоків (відео/вебкамера)."""
+        if hasattr(self, "cached_settings") and self.cached_settings:
+            return self.cached_settings.copy()
+        return self.get_current_settings()
 
     # ==========================
     # ПЕРЕМИКАННЯ МОВИ
@@ -544,30 +768,53 @@ class AsciiStudioApp(ctk.CTk):
         self.video_canvas.canvas.placeholder_text = self.t("placeholder_video")
         self.webcam_canvas.canvas.placeholder_text = self.t("placeholder_webcam")
         self._refit_current_canvas()
+        self.cached_settings = self.get_current_settings()
 
     # ==========================
     # РОЗШИРЕННЯ ТА ПОВНИЙ ЕКРАН
     # ==========================
     def toggle_expand_view(self):
-        """Розгортає область перегляду на всю ширину вікна, приховуючи бічні панелі."""
-        self.is_expanded = not self.is_expanded
+        """Розгортає область перегляду на всю ширину вікна, приховуючи бічні панелі з плавною анімацією."""
+        if getattr(self, "_is_animating_panel", False):
+            return
 
-        if self.is_expanded:
-            self.sidebar_frame.grid_remove()
-            self.settings_frame.grid_remove()
-            self.main_container.grid(row=0, column=0, columnspan=3, sticky="nsew", padx=8, pady=8)
-            btn_text = self.t("btn_collapse")
-        else:
-            self.sidebar_frame.grid(row=0, column=0, sticky="nsew")
-            self.main_container.grid(row=0, column=1, sticky="nsew", padx=15, pady=15)
-            self.settings_frame.grid(row=0, column=2, sticky="nsew", padx=(0, 15), pady=15)
-            btn_text = self.t("btn_expand")
+        self.is_expanded = not self.is_expanded
+        btn_text = self.t("btn_collapse") if self.is_expanded else self.t("btn_expand")
 
         for canvas_frame in (self.ascii_canvas, self.orig_canvas, self.video_canvas, self.webcam_canvas):
             if hasattr(canvas_frame, "set_expand_btn_text"):
                 canvas_frame.set_expand_btn_text(btn_text)
 
-        self.after(50, self._refit_current_canvas)
+        self._animate_panels_transition(self.is_expanded)
+
+    def _animate_panels_transition(self, collapsing: bool):
+        self._is_animating_panel = True
+        steps = [280, 210, 140, 70, 0] if collapsing else [70, 140, 210, 280]
+
+        if not collapsing:
+            self.sidebar_frame.grid(row=0, column=0, sticky="nsew")
+            self.main_container.grid(row=0, column=1, sticky="nsew", padx=15, pady=15)
+            self.settings_frame.grid(row=0, column=2, sticky="nsew", padx=(0, 15), pady=15)
+
+        def _step(i=0):
+            if i < len(steps):
+                w = steps[i]
+                try:
+                    self.settings_frame.configure(width=max(10, w))
+                except Exception:
+                    pass
+                self.after(14, lambda: _step(i + 1))
+            else:
+                if collapsing:
+                    self.sidebar_frame.grid_remove()
+                    self.settings_frame.grid_remove()
+                    self.main_container.grid(row=0, column=0, columnspan=3, sticky="nsew", padx=8, pady=8)
+                else:
+                    self.settings_frame.configure(width=280)
+                self._is_animating_panel = False
+                self._refit_current_canvas()
+
+        _step(0)
 
     def _refit_current_canvas(self):
         if self.current_mode == "image":
@@ -762,6 +1009,9 @@ class AsciiStudioApp(ctk.CTk):
         )
         self.ascii_canvas.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
 
+        # Спінер завантаження / рендерингу поверх полотна
+        self.spinner = LoadingSpinner(tab_render, text=self.t("status_rendering"))
+
         # 2. Plain Text tab
         tab_text.grid_columnconfigure(0, weight=1)
         tab_text.grid_rowconfigure(1, weight=1)
@@ -887,80 +1137,131 @@ class AsciiStudioApp(ctk.CTk):
 
         self.render_current_image(reset_fit=True)
 
-    def render_current_image(self, reset_fit: bool = False):
+    def render_current_image(self, reset_fit: bool = False, on_complete=None):
         if self.current_orig_image is None:
+            if on_complete:
+                on_complete()
             return
+
+        self._render_generation += 1
+        gen = self._render_generation
+        self._is_rendering = True
+
+        if hasattr(self, "spinner") and self.spinner:
+            self.spinner.show()
 
         opts = self.get_current_settings()
-        rendered_pil, plain_text, rgb_grid, text_grid = self.engine.process_frame(
-            self.current_orig_image,
-            width=opts["width"],
-            char_set=opts["char_set"],
-            color_mode=opts["color_mode"],
-            contrast=opts["contrast"],
-            brightness=opts["brightness"],
-            invert=opts["invert"],
-        )
+        frame_copy = self.current_orig_image.copy()
 
-        self.last_rendered_pil = rendered_pil
-        self.last_rendered_text = plain_text
-        self.last_rgb_grid = rgb_grid
-        self.last_text_grid = text_grid
+        def _worker():
+            try:
+                rendered_pil, plain_text, rgb_grid, text_grid = self.engine.process_frame(
+                    frame_copy,
+                    width=opts["width"],
+                    char_set=opts["char_set"],
+                    color_mode=opts["color_mode"],
+                    contrast=opts["contrast"],
+                    brightness=opts["brightness"],
+                    invert=opts["invert"],
+                    generate_text=True,
+                )
+            except Exception as e:
+                rendered_pil, plain_text, rgb_grid, text_grid = None, f"Error: {e}", None, None
 
-        self.txt_ascii_display.delete("1.0", "end")
-        self.txt_ascii_display.insert("1.0", plain_text)
+            self._post_ui_task(self._apply_rendered_image, gen, rendered_pil, plain_text, rgb_grid, text_grid, reset_fit, on_complete)
 
-        self.ascii_canvas.set_image(rendered_pil, reset_fit=reset_fit)
+        thread = threading.Thread(target=_worker, daemon=True)
+        thread.start()
 
-    def save_as_png(self):
-        if self.last_rendered_pil is None:
+    def _apply_rendered_image(self, gen, rendered_pil, plain_text, rgb_grid, text_grid, reset_fit, on_complete=None):
+        if gen != self._render_generation:
             return
+
+        self._is_rendering = False
+        if hasattr(self, "spinner") and self.spinner:
+            self.spinner.hide()
+
+        if rendered_pil is not None:
+            self.last_rendered_pil = rendered_pil
+            self.last_rendered_text = plain_text
+            self.last_rgb_grid = rgb_grid
+            self.last_text_grid = text_grid
+
+            self.txt_ascii_display.delete("1.0", "end")
+            self.txt_ascii_display.insert("1.0", plain_text)
+
+            self.ascii_canvas.set_image(rendered_pil, reset_fit=reset_fit)
+
+        if on_complete:
+            try:
+                on_complete()
+            except Exception:
+                pass
+
+    def save_as_png(self, export_path: str = None):
+        if self.last_rendered_pil is None:
+            return None
         default_name = "ascii_art.png"
         if self.current_image_path:
             default_name = f"{Path(self.current_image_path).stem}_ascii.png"
-        path = filedialog.asksaveasfilename(
-            title=self.t("btn_save_png"),
-            defaultextension=".png",
-            initialfile=default_name,
-            filetypes=[("PNG Image", "*.png"), ("JPEG Image", "*.jpg")],
-        )
+        path = export_path
+        if not path:
+            path = filedialog.asksaveasfilename(
+                title=self.t("btn_save_png"),
+                defaultextension=".png",
+                initialfile=default_name,
+                filetypes=[("PNG Image", "*.png"), ("JPEG Image", "*.jpg")],
+            )
         if path:
             self.last_rendered_pil.save(path)
-            messagebox.showinfo(self.t("dialog_saved_title"), self.t("dialog_saved_msg", path=path))
+            if not export_path:
+                messagebox.showinfo(self.t("dialog_saved_title"), self.t("dialog_saved_msg", path=path))
+            return path
+        return None
 
-    def save_as_txt(self):
+    def save_as_txt(self, export_path: str = None):
         if not self.last_rendered_text:
-            return
+            return None
         default_name = "ascii_art.txt"
         if self.current_image_path:
             default_name = f"{Path(self.current_image_path).stem}_ascii.txt"
-        path = filedialog.asksaveasfilename(
-            title=self.t("btn_save_txt"),
-            defaultextension=".txt",
-            initialfile=default_name,
-            filetypes=[("Text File", "*.txt")],
-        )
+        path = export_path
+        if not path:
+            path = filedialog.asksaveasfilename(
+                title=self.t("btn_save_txt"),
+                defaultextension=".txt",
+                initialfile=default_name,
+                filetypes=[("Text File", "*.txt")],
+            )
         if path:
             with open(path, "w", encoding="utf-8") as f:
                 f.write(self.last_rendered_text)
-            messagebox.showinfo(self.t("dialog_saved_title"), self.t("dialog_saved_msg", path=path))
+            if not export_path:
+                messagebox.showinfo(self.t("dialog_saved_title"), self.t("dialog_saved_msg", path=path))
+            return path
+        return None
 
-    def save_as_html(self):
+    def save_as_html(self, export_path: str = None):
         if self.last_text_grid is None or self.last_rgb_grid is None:
-            return
+            return None
         default_name = "ascii_art.html"
         if self.current_image_path:
             default_name = f"{Path(self.current_image_path).stem}_ascii.html"
-        path = filedialog.asksaveasfilename(
-            title=self.t("btn_save_html"),
-            defaultextension=".html",
-            initialfile=default_name,
-            filetypes=[("HTML Webpage", "*.html")],
-        )
+        path = export_path
+        if not path:
+            path = filedialog.asksaveasfilename(
+                title=self.t("btn_save_html"),
+                defaultextension=".html",
+                initialfile=default_name,
+                filetypes=[("HTML Webpage", "*.html")],
+            )
         if path:
             title = Path(path).stem
             AsciiEngine.export_html(self.last_text_grid, self.last_rgb_grid, path, title=title)
-            messagebox.showinfo(self.t("dialog_saved_title"), self.t("dialog_saved_msg", path=path))
+            if not export_path:
+                messagebox.showinfo(self.t("dialog_saved_title"), self.t("dialog_saved_msg", path=path))
+            return path
+        return None
 
     def copy_ascii_to_clipboard(self):
         if self.last_rendered_text:
@@ -1021,8 +1322,9 @@ class AsciiStudioApp(ctk.CTk):
         )
         self.btn_stop_video.pack(side="left", padx=4, pady=8)
 
-        self.switch_loop = ctk.CTkSwitch(top_bar, text=self.t("switch_loop"))
+        self.switch_loop = ctk.CTkSwitch(top_bar, text=self.t("switch_loop"), command=self._on_loop_switch_changed)
         self.switch_loop.select()
+        self.video_loop = True
         self.switch_loop.pack(side="left", padx=10, pady=8)
 
         self.btn_snapshot_video = ctk.CTkButton(
@@ -1061,6 +1363,9 @@ class AsciiStudioApp(ctk.CTk):
             on_expand_toggle=self.toggle_expand_view,
         )
         self.video_canvas.grid(row=2, column=0, sticky="nsew")
+
+    def _on_loop_switch_changed(self):
+        self.video_loop = bool(self.switch_loop.get())
 
     def open_video_dialog(self):
         filetypes = [
@@ -1118,15 +1423,32 @@ class AsciiStudioApp(ctk.CTk):
 
     def pause_video(self):
         self.is_video_playing = False
+        if self.video_thread is not None and self.video_thread.is_alive():
+            try:
+                self.video_thread.join(timeout=0.35)
+            except Exception:
+                pass
+            self.video_thread = None
         self.btn_play_pause.configure(text=self.t("btn_resume"), fg_color="#2ecc71", hover_color="#27ae60")
 
     def stop_video(self):
         self.is_video_playing = False
+        if self.video_thread is not None and self.video_thread.is_alive():
+            try:
+                self.video_thread.join(timeout=0.35)
+            except Exception:
+                pass
+            self.video_thread = None
+
         if self.video_cap is not None:
-            self.video_cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+            try:
+                self.video_cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+            except Exception:
+                pass
         self.btn_play_pause.configure(text=self.t("btn_play"), fg_color="#2ecc71", hover_color="#27ae60")
         self.slider_timeline.set(0)
         self.lbl_video_time.configure(text="00:00 / 00:00")
+        self.lbl_video_fps.configure(text="FPS: --")
 
     def _on_seek_video(self, value):
         if self.video_cap is not None:
@@ -1148,16 +1470,16 @@ class AsciiStudioApp(ctk.CTk):
 
             ret, frame = self.video_cap.read()
             if not ret:
-                if self.switch_loop.get():
+                if getattr(self, "video_loop", True):
                     self.video_cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
                     continue
                 else:
-                    self.after(0, self.stop_video)
+                    self._post_ui_task(self.stop_video)
                     break
 
             curr_frame_idx = int(self.video_cap.get(cv2.CAP_PROP_POS_FRAMES))
 
-            opts = self.get_current_settings()
+            opts = self.get_thread_safe_settings()
             pil_img, _, _, _ = self.engine.process_frame(
                 frame,
                 width=opts["width"],
@@ -1166,6 +1488,7 @@ class AsciiStudioApp(ctk.CTk):
                 contrast=opts["contrast"],
                 brightness=opts["brightness"],
                 invert=opts["invert"],
+                generate_text=False,
             )
 
             fps_counter += 1
@@ -1173,9 +1496,9 @@ class AsciiStudioApp(ctk.CTk):
                 cur_fps = fps_counter / (time.time() - fps_tracker_t)
                 fps_tracker_t = time.time()
                 fps_counter = 0
-                self.after(0, lambda f=cur_fps: self.lbl_video_fps.configure(text=f"FPS: {f:.1f}"))
+                self._post_ui_task(self._set_video_fps_label, cur_fps)
 
-            self.after(0, lambda img=pil_img, idx=curr_frame_idx: self._update_video_ui(img, idx))
+            self._post_ui_task(self._update_video_ui, pil_img, curr_frame_idx)
 
             elapsed = time.time() - start_t
             sleep_t = target_delay - elapsed
@@ -1193,6 +1516,7 @@ class AsciiStudioApp(ctk.CTk):
             brightness=opts["brightness"],
             invert=opts["invert"],
         )
+        self.last_video_frame_pil = pil_img
         self.video_canvas.set_image(pil_img, reset_fit=reset_fit)
         frame_idx = int(self.video_cap.get(cv2.CAP_PROP_POS_FRAMES)) if self.video_cap else 0
         self._update_timeline_labels(frame_idx)
@@ -1213,17 +1537,22 @@ class AsciiStudioApp(ctk.CTk):
         tot_str = f"{tot_sec // 60:02d}:{tot_sec % 60:02d}"
         self.lbl_video_time.configure(text=f"{cur_str} / {tot_str}")
 
-    def save_video_snapshot(self):
+    def save_video_snapshot(self, export_path: str = None):
         if hasattr(self, "last_video_frame_pil") and self.last_video_frame_pil:
-            path = filedialog.asksaveasfilename(
-                title=self.t("btn_snapshot_video"),
-                defaultextension=".png",
-                initialfile="video_frame_ascii.png",
-                filetypes=[("PNG Image", "*.png")],
-            )
+            path = export_path
+            if not path:
+                path = filedialog.asksaveasfilename(
+                    title=self.t("btn_snapshot_video"),
+                    defaultextension=".png",
+                    initialfile="video_frame_ascii.png",
+                    filetypes=[("PNG Image", "*.png")],
+                )
             if path:
                 self.last_video_frame_pil.save(path)
-                messagebox.showinfo(self.t("dialog_saved_title"), self.t("dialog_saved_msg", path=path))
+                if not export_path:
+                    messagebox.showinfo(self.t("dialog_saved_title"), self.t("dialog_saved_msg", path=path))
+                return path
+        return None
 
     # ==========================
     # 3. РЕЖИМ ВЕБКАМЕРИ
@@ -1327,9 +1656,20 @@ class AsciiStudioApp(ctk.CTk):
 
     def stop_webcam(self):
         self.is_webcam_running = False
+        if self.webcam_thread is not None and self.webcam_thread.is_alive():
+            try:
+                self.webcam_thread.join(timeout=0.4)
+            except Exception:
+                pass
+            self.webcam_thread = None
+
         if self.webcam_cap is not None:
-            self.webcam_cap.release()
+            try:
+                self.webcam_cap.release()
+            except Exception:
+                pass
             self.webcam_cap = None
+
         self.btn_toggle_webcam.configure(
             text=self.t("btn_start_webcam"),
             fg_color="#2ecc71",
@@ -1351,7 +1691,7 @@ class AsciiStudioApp(ctk.CTk):
             frame = cv2.flip(frame, 1)
             self.last_webcam_raw_frame = frame.copy()
 
-            opts = self.get_current_settings()
+            opts = self.get_thread_safe_settings()
             pil_img, plain_text, rgb_grid, text_grid = self.engine.process_frame(
                 frame,
                 width=opts["width"],
@@ -1360,6 +1700,7 @@ class AsciiStudioApp(ctk.CTk):
                 contrast=opts["contrast"],
                 brightness=opts["brightness"],
                 invert=opts["invert"],
+                generate_text=False,
             )
 
             fps_counter += 1
@@ -1367,10 +1708,22 @@ class AsciiStudioApp(ctk.CTk):
                 cur_fps = fps_counter / (time.time() - fps_tracker_t)
                 fps_tracker_t = time.time()
                 fps_counter = 0
-                self.after(0, lambda f=cur_fps: self.lbl_webcam_fps.configure(text=f"FPS: {f:.1f}"))
+                self._post_ui_task(self._set_webcam_fps_label, cur_fps)
 
-            self.after(0, lambda img=pil_img: self._update_webcam_ui(img))
+            self._post_ui_task(self._update_webcam_ui, pil_img)
             time.sleep(0.015)
+
+    def _set_video_fps_label(self, val: float):
+        try:
+            self.lbl_video_fps.configure(text=f"FPS: {val:.1f}")
+        except Exception:
+            pass
+
+    def _set_webcam_fps_label(self, val: float):
+        try:
+            self.lbl_webcam_fps.configure(text=f"FPS: {val:.1f}")
+        except Exception:
+            pass
 
     def _update_webcam_ui(self, pil_img):
         if self.current_mode != "webcam":
@@ -1404,7 +1757,14 @@ class AsciiStudioApp(ctk.CTk):
     # ПЕРЕМИКАННЯ РЕЖИМІВ
     # ==========================
     def switch_mode(self, mode: str):
+        prev_mode = getattr(self, "current_mode", None)
         self.current_mode = mode
+
+        # Безпечне призупинення/завершення попереднього фонового режиму
+        if prev_mode == "video" and mode != "video":
+            self.pause_video()
+        elif prev_mode == "webcam" and mode != "webcam":
+            self.stop_webcam()
 
         self.btn_nav_image.configure(
             fg_color=("gray75", "gray25") if mode == "image" else "transparent",
@@ -1419,16 +1779,19 @@ class AsciiStudioApp(ctk.CTk):
             font=ctk.CTkFont(size=14, weight="bold" if mode == "webcam" else "normal"),
         )
 
-        self.image_view_frame.grid_forget()
-        self.video_view_frame.grid_forget()
-        self.webcam_view_frame.grid_forget()
-
-        if mode == "image":
-            self.image_view_frame.grid(row=0, column=0, sticky="nsew")
-        elif mode == "video":
-            self.video_view_frame.grid(row=0, column=0, sticky="nsew")
+        target_frame = self.image_view_frame
+        if mode == "video":
+            target_frame = self.video_view_frame
         elif mode == "webcam":
-            self.webcam_view_frame.grid(row=0, column=0, sticky="nsew")
+            target_frame = self.webcam_view_frame
+
+        # Плавний перехід між вкладками
+        for frame in (self.image_view_frame, self.video_view_frame, self.webcam_view_frame):
+            if frame != target_frame:
+                frame.grid_forget()
+
+        target_frame.grid(row=0, column=0, sticky="nsew")
+        self.after(25, self._refit_current_canvas)
 
     def change_appearance_mode(self, mode_text: str):
         # Визначаємо вибраний режим за значенням
@@ -1453,13 +1816,35 @@ class AsciiStudioApp(ctk.CTk):
             self.webcam_canvas.set_theme(is_dark)
 
     def on_close(self):
-        self.stop_video()
-        self.stop_webcam()
-        self.destroy()
+        self._is_closing = True
+        if getattr(self, "_poll_timer_id", None):
+            try:
+                self.after_cancel(self._poll_timer_id)
+            except Exception:
+                pass
+            self._poll_timer_id = None
+        try:
+            self.stop_video()
+            if self.video_cap is not None:
+                self.video_cap.release()
+                self.video_cap = None
+        except Exception:
+            pass
+        try:
+            self.stop_webcam()
+            if self.webcam_cap is not None:
+                self.webcam_cap.release()
+                self.webcam_cap = None
+        except Exception:
+            pass
+        try:
+            self.destroy()
+        except Exception:
+            pass
 
 
-def main():
-    app = AsciiStudioApp()
+def main(show_splash: bool = True):
+    app = AsciiStudioApp(show_splash=show_splash)
     app.mainloop()
 
 

@@ -78,6 +78,8 @@ TRANSLATIONS = {
         "filetypes_img": "Image Files",
         "filetypes_vid": "Video Files",
         "filetypes_all": "All Files",
+        "status_rendering": "⚡ Rendering ASCII...",
+        "splash_loading": "Initializing Engine...",
     },
     "uk": {
         "app_title": "ASCII Studio Pro — Відео, Фото та Вебкамера",
@@ -150,5 +152,7 @@ TRANSLATIONS = {
         "filetypes_img": "Зображення",
         "filetypes_vid": "Відеофайли",
         "filetypes_all": "Всі файли",
+        "status_rendering": "⚡ Обробка ASCII...",
+        "splash_loading": "Ініціалізація рушія...",
     },
 }
