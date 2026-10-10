@@ -32,6 +32,8 @@ COLOR_MODES_EN = [
     "Retro (Amber)",
     "Cyberpunk (Neon)",
     "Sepia (Vintage)",
+    "Vaporwave (Sunset)",
+    "Game Boy (1989)",
 ]
 
 COLOR_MODES_UK = [
@@ -41,6 +43,8 @@ COLOR_MODES_UK = [
     "Ретро (Бурштиновий)",
     "Кіберпанк (Неон)",
     "Сепія (Вінтаж)",
+    "Вейпорвейв (Захід)",
+    "Геймбой (1989)",
 ]
 
 # За замовчуванням — англійська
@@ -74,13 +78,14 @@ class AsciiEngine:
         self._char_w = max(6, bbox[2] - bbox[0])
         self._char_h = max(10, bbox[3] - bbox[1] + 2)
 
-    def _prepare_masks(self, char_set: str):
-        if self._current_char_set == char_set and self._masks is not None:
+    def _prepare_masks(self, char_set: str, include_edges: bool = False):
+        full_set = char_set + "|-/\\" if include_edges else char_set
+        if self._current_char_set == full_set and self._masks is not None:
             return
 
-        self._current_char_set = char_set
+        self._current_char_set = full_set
         masks = []
-        for ch in char_set:
+        for ch in full_set:
             img = Image.new("L", (self._char_w, self._char_h), 0)
             draw = ImageDraw.Draw(img)
             draw.text((0, 0), ch, fill=255, font=self._font)
@@ -90,6 +95,63 @@ class AsciiEngine:
             masks.append(mask)
 
         self._masks = np.array(masks, dtype=np.uint8)
+
+    @staticmethod
+    def _apply_dithering(gray_f32: np.ndarray, num_chars: int) -> np.ndarray:
+        """
+        Floyd-Steinberg error diffusion for ASCII character quantization.
+        """
+        h, w = gray_f32.shape
+        arr = gray_f32.copy()
+        max_idx = num_chars - 1
+        scale = max_idx / 255.0
+        inv_scale = 255.0 / max_idx if max_idx > 0 else 1.0
+
+        indices = np.zeros((h, w), dtype=np.int32)
+        for y in range(h):
+            for x in range(w):
+                old_val = arr[y, x]
+                idx = int(np.clip(np.round(old_val * scale), 0, max_idx))
+                indices[y, x] = idx
+                err = old_val - (idx * inv_scale)
+
+                if x + 1 < w:
+                    arr[y, x + 1] += err * (7.0 / 16.0)
+                if y + 1 < h:
+                    if x > 0:
+                        arr[y + 1, x - 1] += err * (3.0 / 16.0)
+                    arr[y + 1, x] += err * (5.0 / 16.0)
+                    if x + 1 < w:
+                        arr[y + 1, x + 1] += err * (1.0 / 16.0)
+
+        return indices
+
+    @staticmethod
+    def _detect_edges(gray_u8: np.ndarray, threshold: float = 55.0):
+        """
+        Detects directional contour lines using Sobel filters.
+        Returns (edge_mask, edge_types) where edge_types: 0=vert, 1=horiz, 2=diag1 (/), 3=diag2 (\\)
+        """
+        gx = cv2.Sobel(gray_u8, cv2.CV_32F, 1, 0, ksize=3)
+        gy = cv2.Sobel(gray_u8, cv2.CV_32F, 0, 1, ksize=3)
+        mag = cv2.magnitude(gx, gy)
+        edge_mask = mag > threshold
+
+        angle = np.degrees(np.arctan2(gy, gx))
+        abs_angle = np.abs(angle)
+
+        edge_types = np.zeros(gray_u8.shape, dtype=np.int32)
+        vert = (abs_angle < 22.5) | (abs_angle > 157.5)
+        horiz = (abs_angle >= 67.5) & (abs_angle <= 112.5)
+        diag1 = ((angle >= 22.5) & (angle < 67.5)) | ((angle >= -157.5) & (angle < -112.5))
+        diag2 = ((angle >= 112.5) & (angle < 157.5)) | ((angle >= -67.5) & (angle < -22.5))
+
+        edge_types[vert] = 0
+        edge_types[horiz] = 1
+        edge_types[diag1] = 2
+        edge_types[diag2] = 3
+
+        return edge_mask, edge_types
 
     def process_frame(
         self,
@@ -102,6 +164,9 @@ class AsciiEngine:
         invert: bool = False,
         bg_color: tuple = (16, 16, 20),
         generate_text: bool = True,
+        dither: bool = False,
+        edges: bool = False,
+        crt: bool = False,
     ):
         """
         Високопродуктивна обробка кадру з повною SIMD-оптимізацією (cv2, numpy).
@@ -114,7 +179,7 @@ class AsciiEngine:
         if not char_set:
             char_set = " .:-=+*#%@"
 
-        self._prepare_masks(char_set)
+        self._prepare_masks(char_set, include_edges=edges)
         num_chars = len(char_set)
 
         orig_h, orig_w = frame_bgr.shape[:2]
@@ -136,13 +201,26 @@ class AsciiEngine:
         if invert:
             gray = 255 - gray
 
-        # 4. Швидкий розрахунок індексів символів
-        indices = (gray.astype(np.float32) * ((num_chars - 1) / 255.0)).astype(np.int32).clip(0, num_chars - 1)
+        # 4. Швидкий розрахунок індексів символів (з підтримкою Floyd-Steinberg Dithering)
+        if dither:
+            indices = self._apply_dithering(gray.astype(np.float32), num_chars)
+        else:
+            indices = (gray.astype(np.float32) * ((num_chars - 1) / 255.0)).astype(np.int32).clip(0, num_chars - 1)
+
+        # 4b. Опціональне накладання контурних ліній (Edge Detection)
+        if edges:
+            edge_mask, edge_types = self._detect_edges(gray)
+            base_edge_idx = num_chars
+            indices[edge_mask & (edge_types == 0)] = base_edge_idx      # |
+            indices[edge_mask & (edge_types == 1)] = base_edge_idx + 1  # -
+            indices[edge_mask & (edge_types == 2)] = base_edge_idx + 2  # /
+            indices[edge_mask & (edge_types == 3)] = base_edge_idx + 3  # \
 
         # 5. Опціональна генерація текстового рядка (економить час під час стрімінгу відео)
         plain_text = ""
         text_grid = None
-        char_arr = np.array(list(char_set))
+        full_char_list = list(char_set + "|-/\\" if edges else char_set)
+        char_arr = np.array(full_char_list)
         if generate_text:
             text_grid = char_arr[indices]
             text_lines = ["".join(row) for row in text_grid]
@@ -175,6 +253,20 @@ class AsciiEngine:
             g = np.clip(gray.astype(np.float32) * 0.9, 0, 255).astype(np.uint8)
             b = np.clip(gray.astype(np.float32) * 0.7, 0, 255).astype(np.uint8)
             palette_small = np.stack([r, g, b], axis=-1)
+        elif "Vaporwave" in color_mode or "Вейпорвейв" in color_mode or "Sunset" in color_mode or "Захід" in color_mode:
+            r = np.clip(gray.astype(np.float32) * 1.3, 0, 255).astype(np.uint8)
+            g = (gray * 0.25).astype(np.uint8)
+            b = np.clip(gray.astype(np.float32) * 1.45, 0, 255).astype(np.uint8)
+            palette_small = np.stack([r, g, b], axis=-1)
+        elif "Game Boy" in color_mode or "Геймбой" in color_mode or "1989" in color_mode:
+            gb_palette = np.array([
+                [15, 56, 15],
+                [48, 98, 48],
+                [139, 172, 15],
+                [155, 188, 15]
+            ], dtype=np.uint8)
+            gb_idx = (gray.astype(np.float32) / 255.0 * 3.99).astype(np.int32).clip(0, 3)
+            palette_small = gb_palette[gb_idx]
         else:
             palette_small = small_rgb
 
@@ -190,6 +282,10 @@ class AsciiEngine:
         rendered_img = np.empty((out_h, out_w, 3), dtype=np.uint8)
         rendered_img[:] = bg_color
         cv2.copyTo(grid_colors, grid_masks, rendered_img)
+
+        # 10. Опціональний CRT Scanlines ефект
+        if crt:
+            rendered_img[::3] = (rendered_img[::3].astype(np.float32) * 0.65).astype(np.uint8)
 
         pil_image = Image.fromarray(rendered_img)
         return pil_image, plain_text, small_rgb, text_grid

@@ -13,7 +13,7 @@ class ZoomableCanvas(tk.Canvas):
     """
 
     def __init__(self, master, placeholder_text="Зображення відсутнє", on_zoom_change=None, **kwargs):
-        bg = kwargs.pop("bg", "#14171c")
+        bg = kwargs.pop("bg", "#0a0c10")
         super().__init__(master, bg=bg, highlightthickness=0, **kwargs)
 
         self.placeholder_text = placeholder_text
@@ -48,7 +48,7 @@ class ZoomableCanvas(tk.Canvas):
         self.bind("<Double-Button-1>", lambda e: self.zoom_fit())
 
     def set_theme(self, is_dark: bool):
-        bg = "#14171c" if is_dark else "#f0f2f5"
+        bg = "#0a0c10" if is_dark else "#f0f2f5"
         self.configure(bg=bg)
         self.redraw()
 
@@ -247,8 +247,15 @@ class ZoomableImageFrame(ctk.CTkFrame):
         )
         self.canvas.grid(row=0, column=0, sticky="nsew")
 
-        # 2. Нижня панель керування зумом
-        self.toolbar = ctk.CTkFrame(self, height=36, corner_radius=8, fg_color=("gray85", "#1e222a"))
+        # 2. Нижня панель керування зумом (Glassmorphism Pill Dock)
+        self.toolbar = ctk.CTkFrame(
+            self,
+            height=40,
+            corner_radius=10,
+            fg_color=("#181c24", "#12151e"),
+            border_width=1,
+            border_color="#242b3d",
+        )
         self.toolbar.grid(row=1, column=0, sticky="ew", pady=(8, 0))
 
         # Кнопка зменшити
@@ -256,75 +263,102 @@ class ZoomableImageFrame(ctk.CTkFrame):
             self.toolbar,
             text="➖",
             width=32,
-            height=26,
+            height=28,
+            corner_radius=6,
+            fg_color="#1e2433",
+            hover_color="#2b3447",
+            border_width=1,
+            border_color="#333f56",
             command=lambda: self.canvas.zoom_by_factor(0.8),
         )
-        self.btn_zoom_out.pack(side="left", padx=(8, 4), pady=4)
+        self.btn_zoom_out.pack(side="left", padx=(8, 4), pady=5)
 
-        # Відсоток зуму
+        # Відсоток зуму (Pill Badge)
         self.lbl_zoom = ctk.CTkLabel(
             self.toolbar,
             text="100%",
             width=65,
-            font=ctk.CTkFont(size=12, weight="bold"),
+            font=ctk.CTkFont(size=11, weight="bold"),
+            fg_color="#1e293b",
+            text_color="#38bdf8",
+            corner_radius=6,
+            padx=6,
+            pady=2,
         )
-        self.lbl_zoom.pack(side="left", padx=2, pady=4)
+        self.lbl_zoom.pack(side="left", padx=2, pady=5)
 
         # Кнопка збільшити
         self.btn_zoom_in = ctk.CTkButton(
             self.toolbar,
             text="➕",
             width=32,
-            height=26,
+            height=28,
+            corner_radius=6,
+            fg_color="#1e2433",
+            hover_color="#2b3447",
+            border_width=1,
+            border_color="#333f56",
             command=lambda: self.canvas.zoom_by_factor(1.25),
         )
-        self.btn_zoom_in.pack(side="left", padx=(2, 8), pady=4)
+        self.btn_zoom_in.pack(side="left", padx=(2, 8), pady=5)
 
         # Кнопка Fit
         self.btn_fit = ctk.CTkButton(
             self.toolbar,
             text="↔️ Fit",
-            width=80,
-            height=26,
-            fg_color="gray30",
-            hover_color="gray40",
+            width=75,
+            height=28,
+            corner_radius=6,
+            font=ctk.CTkFont(size=11, weight="bold"),
+            fg_color="#1e2433",
+            hover_color="#2b3447",
+            border_width=1,
+            border_color="#333f56",
+            text_color="#e2e8f0",
             command=self.canvas.zoom_fit,
         )
-        self.btn_fit.pack(side="left", padx=4, pady=4)
+        self.btn_fit.pack(side="left", padx=3, pady=5)
 
         # Кнопка 100%
         self.btn_100 = ctk.CTkButton(
             self.toolbar,
             text="1:1 (100%)",
             width=85,
-            height=26,
-            fg_color="gray30",
-            hover_color="gray40",
+            height=28,
+            corner_radius=6,
+            font=ctk.CTkFont(size=11, weight="bold"),
+            fg_color="#1e2433",
+            hover_color="#2b3447",
+            border_width=1,
+            border_color="#333f56",
+            text_color="#e2e8f0",
             command=self.canvas.zoom_100,
         )
-        self.btn_100.pack(side="left", padx=4, pady=4)
+        self.btn_100.pack(side="left", padx=3, pady=5)
 
         # Кнопка розширення вікна / приховування бічних панелей
         if self.on_expand_toggle:
             self.btn_expand = ctk.CTkButton(
                 self.toolbar,
                 text="⛶ Expand Canvas",
-                width=140,
-                height=26,
-                fg_color="#2980b9",
-                hover_color="#3498db",
+                width=135,
+                height=28,
+                corner_radius=6,
+                font=ctk.CTkFont(size=11, weight="bold"),
+                fg_color="#2563eb",
+                hover_color="#1d4ed8",
                 command=self.on_expand_toggle,
             )
-            self.btn_expand.pack(side="left", padx=6, pady=4)
+            self.btn_expand.pack(side="left", padx=6, pady=5)
 
         # Підказка
         self.lbl_hint = ctk.CTkLabel(
             self.toolbar,
-            text="💡 Wheel: zoom | Drag LMB: pan | Double-click: Fit",
+            text="💡 Wheel: zoom • Drag: pan • Double-click: Fit",
             font=ctk.CTkFont(size=11),
-            text_color="gray",
+            text_color="#64748b",
         )
-        self.lbl_hint.pack(side="right", padx=12, pady=4)
+        self.lbl_hint.pack(side="right", padx=12, pady=5)
 
     def set_expand_btn_text(self, text: str):
         if hasattr(self, "btn_expand"):

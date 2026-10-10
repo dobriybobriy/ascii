@@ -13,6 +13,8 @@ ascii/
 ├── assets/
 │   ├── icon.ico             # Application icon for Windows executable / window / taskbar
 │   └── icon.png             # High-resolution PNG logo and UI icon
+├── build_exe.py             # PyInstaller standalone packaging script (.exe builder)
+├── build.bat                # Windows one-click batch compiler
 ├── app.py                   # Main graphical user interface (CustomTkinter, PIL, OpenCV, Thread-Safe Queue)
 ├── ascii_engine.py          # High-performance vectorized ASCII art engine (NumPy, OpenCV SIMD blitting)
 ├── main.py                  # Entry point for CLI runner, terminal viewer, and interactive menu
@@ -41,12 +43,15 @@ ascii/
   - All heavy ASCII generation tasks are offloaded to background worker threads (`threading.Thread`).
   - Thread-safe UI task queue (`queue.Queue`) safely marshals canvas and widget updates back to the CustomTkinter mainloop without freezing or lag.
   - Animated neon circular spinner (`LoadingSpinner`) displayed during high-resolution processing.
-- **Photo Processing:**
+- **Photo Processing & Visual Effects:**
   - Load images across formats (PNG, JPG, JPEG, BMP, WEBP, TIFF, ICO) with Unicode-safe path support on Windows.
-  - Real-time ASCII rendering preview.
+  - **Floyd-Steinberg Dithering:** Error-diffusion dithering preventing color banding on gradients, faces, and skies.
+  - **Edge Contour Accents (Sobel):** Directional stroke detection (`|`, `-`, `/`, `\`) along sharp object contours for architectural and comic-style sketches.
+  - **CRT Scanlines Effect:** Authentic retro phosphor monitor scanlines overlay.
+  - **Color Palettes:** Full Color (RGB), Monochrome, Matrix, Retro Amber, Cyberpunk Neon, Vintage Sepia, **Vaporwave Sunset**, and **Game Boy 1989**.
   - Interactive pan and zoom canvas (mouse wheel zoom, left-click drag to pan, double-click fit, 1:1 button).
   - Multiple preview tabs: *ASCII Render*, *Plain Text* (with Ctrl+Wheel font scaling), and *Original Image*.
-  - Export capabilities: Programmatic or dialog-driven export as high-resolution PNG image, plain `.txt`, styled standalone `.html`, or direct clipboard copy.
+  - Export capabilities: Programmatic or dialog-driven export as high-resolution PNG image, **Animated GIF**, plain `.txt`, styled standalone `.html`, or direct clipboard copy.
 - **Video Processing:**
   - Open video files (MP4, AVI, MOV, etc.) with Unicode-safe path support (`open_video_unicode`).
   - Playback controls: Play, Pause, Resume, Stop, and Loop toggle.
@@ -60,19 +65,15 @@ ascii/
   - "Open in CMD" feature for photos, video streams, and webcam feeds.
   - Spawns independent Windows Command Prompt windows with full 24-bit TrueColor ANSI color support.
   - Automatically resolves `python.exe` when GUI is launched under `pythonw.exe`.
-- **Customization & Controls:**
-  - Charset selection: Standard, Dense, Minimal, Blocks, Binary, Math, Matrix, and Custom input.
-  - Color palettes: TrueColor (RGB), Monochrome (White), Grayscale, Cyberpunk, Amber Phosphor, Matrix Green.
-  - Real-time sliders for width (characters), contrast adjustment, brightness adjustment, and invert toggle.
-  - Fullscreen mode (F11) and distraction-free canvas expansion toggle (Esc to collapse).
-  - Bilingual UI switcher: English (default) and Ukrainian.
+- **Standalone Desktop Packaging (`build_exe.py` / `build.bat`):**
+  - PyInstaller automated compilation with embedded icon, assets, hidden imports, `sys._MEIPASS` dynamic path resolution, and top-level crash logging against silent `--noconsole` exits.
 
 ### ⚡ Engine Optimizations (`ascii_engine.py`)
 - **Vectorized Character Glyph Masks:** Precomputed character font masks stored as binary `uint8` matrices (0 and 255).
-- **Early Palette Computation:** Sepia, Matrix, Cyberpunk, and Monochrome color mappings are vectorized across the low-resolution `(target_h, target_w)` grid before upscaling, resulting in an ~80x reduction in pixel arithmetic.
+- **Early Palette Computation:** Sepia, Matrix, Cyberpunk, Monochrome, Vaporwave, and Game Boy color mappings are vectorized across the low-resolution `(target_h, target_w)` grid before upscaling, resulting in an ~80x reduction in pixel arithmetic.
 - **SIMD Nearest-Neighbor Upscaling & Blitting:** Frame upscaling performed via `cv2.resize(..., INTER_NEAREST)` and glyph composition accelerated with `cv2.copyTo`.
 - **Streamlined Video/Webcam Pipeline:** Added `generate_text=False` flag to eliminate redundant string concatenations during live video/camera rendering.
-- **Benchmark Performance:** Render times dropped from >50ms down to **~20–28 ms per frame** at 200+ character widths.
+- **Benchmark Performance:** Render times dropped from >50ms down to **~22 ms per frame** at 200+ character widths.
 
 ### 🧪 Autonomous Testing Suite (`test_runner.py`)
 - Fully automated E2E test runner executing 9 sequential phases:

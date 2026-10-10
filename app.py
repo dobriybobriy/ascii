@@ -47,6 +47,30 @@ ctk.set_appearance_mode("Dark")
 ctk.set_default_color_theme("blue")
 
 
+def get_resource_path(relative_path: str) -> Path:
+    """Динамічний резолвер шляхів для розробки та зібраного PyInstaller середовища (sys._MEIPASS)."""
+    base_path = getattr(sys, "_MEIPASS", Path(__file__).parent)
+    return Path(base_path) / relative_path
+
+
+def setup_crash_logger():
+    """Запобігає тихим вильотам у зібраному віконному додатку без консолі."""
+    def excepthook(exc_type, exc_value, exc_traceback):
+        if issubclass(exc_type, KeyboardInterrupt):
+            sys.__excepthook__(exc_type, exc_value, exc_traceback)
+            return
+        log_path = Path.home() / "ascii_studio_crash.log"
+        try:
+            with open(log_path, "w", encoding="utf-8") as f:
+                import traceback
+                traceback.print_exception(exc_type, exc_value, exc_traceback, file=f)
+        except Exception:
+            pass
+    sys.excepthook = excepthook
+
+setup_crash_logger()
+
+
 def open_video_unicode(video_source):
     """Надійно відкриває відео навіть якщо шлях містить кирилицю або пробіли."""
     if isinstance(video_source, int):
@@ -108,8 +132,7 @@ class SplashScreen(ctk.CTkToplevel):
         card.pack(fill="both", expand=True, padx=4, pady=4)
 
         # Логотип
-        assets_dir = Path(__file__).parent / "assets"
-        png_path = assets_dir / "icon.png"
+        png_path = get_resource_path("assets/icon.png")
         self.logo_img = None
         if png_path.exists():
             try:
@@ -267,9 +290,8 @@ class AsciiStudioApp(ctk.CTk):
         self.minsize(980, 680)
 
         # Встановлення власної іконки застосунку для вікна та панелі завдань
-        assets_dir = Path(__file__).parent / "assets"
-        ico_path = assets_dir / "icon.ico"
-        png_path = assets_dir / "icon.png"
+        ico_path = get_resource_path("assets/icon.ico")
+        png_path = get_resource_path("assets/icon.png")
 
         if ico_path.exists():
             try:
@@ -388,24 +410,58 @@ class AsciiStudioApp(ctk.CTk):
         self.grid_rowconfigure(0, weight=1)
 
         # 1. ЛІВА ПАНЕЛЬ НАВІГАЦІЇ
-        self.sidebar_frame = ctk.CTkFrame(self, width=210, corner_radius=0)
+        self.sidebar_frame = ctk.CTkFrame(self, width=220, corner_radius=0, fg_color=("#141722", "#0c0e15"))
         self.sidebar_frame.grid(row=0, column=0, sticky="nsew")
         self.sidebar_frame.grid_rowconfigure(6, weight=1)
 
-        self.logo_label = ctk.CTkLabel(
-            self.sidebar_frame,
-            text="✨ ASCII Studio",
-            font=ctk.CTkFont(size=20, weight="bold"),
+        # Бренд-блок
+        brand_frame = ctk.CTkFrame(self.sidebar_frame, fg_color="transparent")
+        brand_frame.grid(row=0, column=0, padx=16, pady=(18, 12), sticky="ew")
+
+        self.logo_badge = ctk.CTkLabel(
+            brand_frame,
+            text="⚡",
+            font=ctk.CTkFont(size=20),
+            fg_color="#1e293b",
+            corner_radius=8,
+            width=36,
+            height=36,
         )
-        self.logo_label.grid(row=0, column=0, padx=20, pady=(20, 4))
+        self.logo_badge.pack(side="left", padx=(0, 10))
+
+        title_container = ctk.CTkFrame(brand_frame, fg_color="transparent")
+        title_container.pack(side="left", fill="x")
+
+        title_row = ctk.CTkFrame(title_container, fg_color="transparent")
+        title_row.pack(anchor="w")
+
+        self.logo_label = ctk.CTkLabel(
+            title_row,
+            text="ASCII STUDIO",
+            font=ctk.CTkFont(size=14, weight="bold"),
+            text_color="#f8fafc",
+        )
+        self.logo_label.pack(side="left")
+
+        self.badge_pro = ctk.CTkLabel(
+            title_row,
+            text="PRO",
+            font=ctk.CTkFont(size=9, weight="bold"),
+            fg_color="#0284c7",
+            text_color="#ffffff",
+            corner_radius=4,
+            padx=4,
+            pady=1,
+        )
+        self.badge_pro.pack(side="left", padx=(6, 0))
 
         self.sub_logo_label = ctk.CTkLabel(
-            self.sidebar_frame,
+            title_container,
             text=self.t("sub_logo"),
-            font=ctk.CTkFont(size=12),
-            text_color="gray",
+            font=ctk.CTkFont(size=10),
+            text_color="#64748b",
         )
-        self.sub_logo_label.grid(row=1, column=0, padx=20, pady=(0, 20))
+        self.sub_logo_label.pack(anchor="w")
 
         # Кнопки навігації
         self.btn_nav_image = ctk.CTkButton(
@@ -413,34 +469,41 @@ class AsciiStudioApp(ctk.CTk):
             text=self.t("nav_photo"),
             height=40,
             anchor="w",
-            font=ctk.CTkFont(size=14, weight="bold"),
+            corner_radius=8,
+            font=ctk.CTkFont(size=13, weight="bold"),
+            fg_color="#2563eb",
+            hover_color="#1d4ed8",
             command=lambda: self.switch_mode("image"),
         )
-        self.btn_nav_image.grid(row=2, column=0, padx=15, pady=6, sticky="ew")
+        self.btn_nav_image.grid(row=2, column=0, padx=12, pady=4, sticky="ew")
 
         self.btn_nav_video = ctk.CTkButton(
             self.sidebar_frame,
             text=self.t("nav_video"),
             height=40,
             anchor="w",
-            font=ctk.CTkFont(size=14),
+            corner_radius=8,
+            font=ctk.CTkFont(size=13),
             fg_color="transparent",
-            text_color=("gray10", "gray90"),
+            text_color="#94a3b8",
+            hover_color="#1e293b",
             command=lambda: self.switch_mode("video"),
         )
-        self.btn_nav_video.grid(row=3, column=0, padx=15, pady=6, sticky="ew")
+        self.btn_nav_video.grid(row=3, column=0, padx=12, pady=4, sticky="ew")
 
         self.btn_nav_webcam = ctk.CTkButton(
             self.sidebar_frame,
             text=self.t("nav_webcam"),
             height=40,
             anchor="w",
-            font=ctk.CTkFont(size=14),
+            corner_radius=8,
+            font=ctk.CTkFont(size=13),
             fg_color="transparent",
-            text_color=("gray10", "gray90"),
+            text_color="#94a3b8",
+            hover_color="#1e293b",
             command=lambda: self.switch_mode("webcam"),
         )
-        self.btn_nav_webcam.grid(row=4, column=0, padx=15, pady=6, sticky="ew")
+        self.btn_nav_webcam.grid(row=4, column=0, padx=12, pady=4, sticky="ew")
 
         # Швидкий запуск консолі CMD
         self.btn_sidebar_cmd = ctk.CTkButton(
@@ -448,37 +511,52 @@ class AsciiStudioApp(ctk.CTk):
             text=self.t("nav_cmd"),
             height=36,
             anchor="w",
-            font=ctk.CTkFont(size=13),
-            fg_color="#2c3e50",
-            hover_color="#34495e",
+            corner_radius=8,
+            font=ctk.CTkFont(size=12, weight="bold"),
+            fg_color="#181c24",
+            hover_color="#242b3d",
+            border_width=1,
+            border_color="#2d3748",
+            text_color="#94a3b8",
             command=self.launch_cmd_interactive,
         )
-        self.btn_sidebar_cmd.grid(row=5, column=0, padx=15, pady=(15, 6), sticky="ew")
+        self.btn_sidebar_cmd.grid(row=5, column=0, padx=12, pady=(14, 4), sticky="ew")
 
-        # Перемикач мови (English / Українська)
-        self.lang_label = ctk.CTkLabel(self.sidebar_frame, text=self.t("lang_label"), font=ctk.CTkFont(size=11))
-        self.lang_label.grid(row=7, column=0, padx=20, pady=(10, 0), sticky="w")
+        # Карточка налаштувань мови та теми внизу
+        footer_card = ctk.CTkFrame(self.sidebar_frame, fg_color=("#181c24", "#12151e"), corner_radius=10, border_width=1, border_color="#232938")
+        footer_card.grid(row=7, column=0, padx=12, pady=(10, 16), sticky="sew")
+        footer_card.grid_columnconfigure(0, weight=1)
+
+        self.lang_label = ctk.CTkLabel(footer_card, text=self.t("lang_label"), font=ctk.CTkFont(size=10, weight="bold"), text_color="#64748b")
+        self.lang_label.pack(anchor="w", padx=10, pady=(8, 2))
 
         self.lang_menu = ctk.CTkOptionMenu(
-            self.sidebar_frame,
+            footer_card,
             values=["English", "Українська"],
             command=self.change_language,
             height=28,
+            corner_radius=6,
+            fg_color="#1e2433",
+            button_color="#2b3447",
+            button_hover_color="#3b82f6",
         )
         self.lang_menu.set("English")
-        self.lang_menu.grid(row=8, column=0, padx=15, pady=(4, 10), sticky="ew")
+        self.lang_menu.pack(fill="x", padx=10, pady=(0, 6))
 
-        # Перемикач теми
-        self.appearance_label = ctk.CTkLabel(self.sidebar_frame, text=self.t("theme_label"), font=ctk.CTkFont(size=11))
-        self.appearance_label.grid(row=9, column=0, padx=20, pady=(0, 0), sticky="w")
+        self.appearance_label = ctk.CTkLabel(footer_card, text=self.t("theme_label"), font=ctk.CTkFont(size=10, weight="bold"), text_color="#64748b")
+        self.appearance_label.pack(anchor="w", padx=10, pady=(2, 2))
 
         self.appearance_menu = ctk.CTkOptionMenu(
-            self.sidebar_frame,
+            footer_card,
             values=[self.t("theme_dark"), self.t("theme_light"), self.t("theme_system")],
             command=self.change_appearance_mode,
             height=28,
+            corner_radius=6,
+            fg_color="#1e2433",
+            button_color="#2b3447",
+            button_hover_color="#3b82f6",
         )
-        self.appearance_menu.grid(row=10, column=0, padx=15, pady=(4, 20), sticky="ew")
+        self.appearance_menu.pack(fill="x", padx=10, pady=(0, 10))
 
         # 2. ЦЕНТРАЛЬНА ЗОНА (КОНТЕНТ)
         self.main_container = ctk.CTkFrame(self, fg_color="transparent")
@@ -501,34 +579,58 @@ class AsciiStudioApp(ctk.CTk):
     # ПАНЕЛЬ НАЛАШТУВАНЬ
     # ==========================
     def _build_settings_panel(self):
-        self.settings_frame = ctk.CTkScrollableFrame(self, width=280, label_text=self.t("settings_title"))
+        self.settings_frame = ctk.CTkScrollableFrame(
+            self,
+            width=290,
+            label_text=self.t("settings_title"),
+            fg_color=("#181c24", "#12151d"),
+            border_width=1,
+            border_color=("#e2e8f0", "#232a3b"),
+            corner_radius=12,
+        )
         self.settings_frame.grid(row=0, column=2, sticky="nsew", padx=(0, 15), pady=15)
         self.settings_frame.grid_columnconfigure(0, weight=1)
 
-        # 1. Ширина в символах
-        self.lbl_width = ctk.CTkLabel(
+        # Секція 1: Розмір та символи
+        card_res = ctk.CTkFrame(
             self.settings_frame,
+            fg_color=("#ffffff", "#171b26"),
+            border_width=1,
+            border_color=("#e2e8f0", "#242c3d"),
+            corner_radius=10,
+        )
+        card_res.pack(fill="x", padx=6, pady=(6, 8))
+
+        # 1. Ширина в символах
+        row_w = ctk.CTkFrame(card_res, fg_color="transparent")
+        row_w.pack(fill="x", padx=10, pady=(8, 2))
+
+        self.lbl_width = ctk.CTkLabel(
+            row_w,
             text=self.t("lbl_width", val=100),
-            font=ctk.CTkFont(size=13, weight="bold"),
+            font=ctk.CTkFont(size=12, weight="bold"),
             anchor="w",
         )
-        self.lbl_width.pack(fill="x", padx=10, pady=(10, 2))
+        self.lbl_width.pack(side="left", fill="x", expand=True)
 
         self.slider_width = ctk.CTkSlider(
-            self.settings_frame,
+            card_res,
             from_=30,
             to=240,
             number_of_steps=210,
+            progress_color="#3b82f6",
+            button_color="#60a5fa",
+            button_hover_color="#93c5fd",
             command=self._on_width_changed,
         )
         self.slider_width.set(100)
-        self.slider_width.pack(fill="x", padx=10, pady=(0, 15))
+        self.slider_width.pack(fill="x", padx=10, pady=(0, 10))
 
         # 2. Пресет символів
         self.lbl_charset_title = ctk.CTkLabel(
-            self.settings_frame,
+            card_res,
             text=self.t("lbl_charset"),
-            font=ctk.CTkFont(size=13, weight="bold"),
+            font=ctk.CTkFont(size=12, weight="bold"),
             anchor="w",
         )
         self.lbl_charset_title.pack(fill="x", padx=10, pady=(0, 2))
@@ -536,94 +638,171 @@ class AsciiStudioApp(ctk.CTk):
         presets_dict = PRESETS_EN if self.current_lang == "en" else PRESETS_UK
         preset_names = list(presets_dict.keys()) + [self.t("preset_custom")]
         self.combo_presets = ctk.CTkOptionMenu(
-            self.settings_frame,
+            card_res,
             values=preset_names,
+            fg_color=("#334155", "#1f2637"),
+            button_color=("#475569", "#2b344c"),
+            button_hover_color=("#64748b", "#3b4766"),
             command=self._on_preset_changed,
         )
         self.combo_presets.set(preset_names[0])
-        self.combo_presets.pack(fill="x", padx=10, pady=(0, 5))
+        self.combo_presets.pack(fill="x", padx=10, pady=(0, 8))
 
         self.entry_custom_chars = ctk.CTkEntry(
-            self.settings_frame,
+            card_res,
             placeholder_text=self.t("placeholder_custom_chars"),
+            fg_color=("#f1f5f9", "#0f131a"),
+            border_color="#334155",
+            corner_radius=6,
         )
         self.entry_custom_chars.insert(0, presets_dict[preset_names[0]])
         self.entry_custom_chars.bind("<KeyRelease>", lambda e: self._on_setting_changed())
-        self.entry_custom_chars.pack(fill="x", padx=10, pady=(0, 15))
+        # Приховуємо поле за замовчуванням якщо обрано стандартний пресет
+        # self.entry_custom_chars.pack() буде викликатися динамічно при виборі Custom
+
+        # Секція 2: Колір та тон
+        card_color = ctk.CTkFrame(
+            self.settings_frame,
+            fg_color=("#ffffff", "#171b26"),
+            border_width=1,
+            border_color=("#e2e8f0", "#242c3d"),
+            corner_radius=10,
+        )
+        card_color.pack(fill="x", padx=6, pady=(0, 8))
 
         # 3. Колірний режим
         self.lbl_palette_title = ctk.CTkLabel(
-            self.settings_frame,
+            card_color,
             text=self.t("lbl_palette"),
-            font=ctk.CTkFont(size=13, weight="bold"),
+            font=ctk.CTkFont(size=12, weight="bold"),
             anchor="w",
         )
-        self.lbl_palette_title.pack(fill="x", padx=10, pady=(0, 2))
+        self.lbl_palette_title.pack(fill="x", padx=10, pady=(8, 2))
 
         modes_list = COLOR_MODES_EN if self.current_lang == "en" else COLOR_MODES_UK
         self.combo_colors = ctk.CTkOptionMenu(
-            self.settings_frame,
+            card_color,
             values=modes_list,
+            fg_color=("#334155", "#1f2637"),
+            button_color=("#475569", "#2b344c"),
+            button_hover_color=("#64748b", "#3b4766"),
             command=lambda val: self._on_setting_changed(),
         )
         self.combo_colors.set(modes_list[0])
-        self.combo_colors.pack(fill="x", padx=10, pady=(0, 15))
+        self.combo_colors.pack(fill="x", padx=10, pady=(0, 10))
 
-        # 4. Перемикач інверсії
-        self.switch_invert = ctk.CTkSwitch(
-            self.settings_frame,
-            text=self.t("switch_invert"),
-            command=self._on_setting_changed,
-        )
-        self.switch_invert.pack(fill="x", padx=10, pady=(0, 15))
-
-        # 5. Контрастність
+        # 4. Контрастність
         self.lbl_contrast = ctk.CTkLabel(
-            self.settings_frame,
+            card_color,
             text=self.t("lbl_contrast", val=1.0),
             anchor="w",
-            font=ctk.CTkFont(size=13),
+            font=ctk.CTkFont(size=12, weight="bold"),
         )
         self.lbl_contrast.pack(fill="x", padx=10, pady=(0, 2))
 
         self.slider_contrast = ctk.CTkSlider(
-            self.settings_frame,
+            card_color,
             from_=0.5,
             to=2.5,
             number_of_steps=40,
+            progress_color="#3b82f6",
+            button_color="#60a5fa",
+            button_hover_color="#93c5fd",
             command=self._on_contrast_changed,
         )
         self.slider_contrast.set(1.0)
-        self.slider_contrast.pack(fill="x", padx=10, pady=(0, 15))
+        self.slider_contrast.pack(fill="x", padx=10, pady=(0, 10))
 
-        # 6. Яскравість
+        # 5. Яскравість
         self.lbl_brightness = ctk.CTkLabel(
-            self.settings_frame,
+            card_color,
             text=self.t("lbl_brightness", val=0),
             anchor="w",
-            font=ctk.CTkFont(size=13),
+            font=ctk.CTkFont(size=12, weight="bold"),
         )
         self.lbl_brightness.pack(fill="x", padx=10, pady=(0, 2))
 
         self.slider_brightness = ctk.CTkSlider(
-            self.settings_frame,
+            card_color,
             from_=-80,
             to=80,
             number_of_steps=160,
+            progress_color="#3b82f6",
+            button_color="#60a5fa",
+            button_hover_color="#93c5fd",
             command=self._on_brightness_changed,
         )
         self.slider_brightness.set(0)
-        self.slider_brightness.pack(fill="x", padx=10, pady=(0, 15))
+        self.slider_brightness.pack(fill="x", padx=10, pady=(0, 10))
+
+        # Секція 3: Спецефекти (FX)
+        card_fx = ctk.CTkFrame(
+            self.settings_frame,
+            fg_color=("#ffffff", "#171b26"),
+            border_width=1,
+            border_color=("#e2e8f0", "#242c3d"),
+            corner_radius=10,
+        )
+        card_fx.pack(fill="x", padx=6, pady=(0, 8))
+
+        lbl_fx_title = ctk.CTkLabel(
+            card_fx,
+            text="✨ FX & FILTERS",
+            font=ctk.CTkFont(size=10, weight="bold"),
+            text_color="#64748b",
+            anchor="w",
+        )
+        lbl_fx_title.pack(fill="x", padx=10, pady=(8, 4))
+
+        self.switch_invert = ctk.CTkSwitch(
+            card_fx,
+            text=self.t("switch_invert"),
+            font=ctk.CTkFont(size=12),
+            progress_color="#3b82f6",
+            command=self._on_setting_changed,
+        )
+        self.switch_invert.pack(fill="x", padx=10, pady=(2, 6))
+
+        self.switch_dither = ctk.CTkSwitch(
+            card_fx,
+            text=self.t("switch_dither"),
+            font=ctk.CTkFont(size=12),
+            progress_color="#3b82f6",
+            command=self._on_setting_changed,
+        )
+        self.switch_dither.pack(fill="x", padx=10, pady=(2, 6))
+
+        self.switch_edges = ctk.CTkSwitch(
+            card_fx,
+            text=self.t("switch_edges"),
+            font=ctk.CTkFont(size=12),
+            progress_color="#3b82f6",
+            command=self._on_setting_changed,
+        )
+        self.switch_edges.pack(fill="x", padx=10, pady=(2, 6))
+
+        self.switch_crt = ctk.CTkSwitch(
+            card_fx,
+            text=self.t("switch_crt"),
+            font=ctk.CTkFont(size=12),
+            progress_color="#3b82f6",
+            command=self._on_setting_changed,
+        )
+        self.switch_crt.pack(fill="x", padx=10, pady=(2, 10))
 
         # Кнопка скидання налаштувань
         self.btn_reset_settings = ctk.CTkButton(
             self.settings_frame,
             text=self.t("btn_reset_settings"),
-            fg_color="gray30",
-            hover_color="gray40",
+            fg_color=("#cbd5e1", "#242b3b"),
+            hover_color=("#94a3b8", "#333d52"),
+            text_color=("#0f172a", "#cbd5e1"),
+            corner_radius=8,
+            height=32,
+            font=ctk.CTkFont(size=12, weight="bold"),
             command=self._reset_settings,
         )
-        self.btn_reset_settings.pack(fill="x", padx=10, pady=(10, 10))
+        self.btn_reset_settings.pack(fill="x", padx=6, pady=(4, 10))
 
     def _reset_settings(self):
         self.slider_width.set(100)
@@ -633,9 +812,14 @@ class AsciiStudioApp(ctk.CTk):
         self.combo_presets.set(first_preset)
         self.entry_custom_chars.delete(0, "end")
         self.entry_custom_chars.insert(0, presets_dict[first_preset])
+        if self.entry_custom_chars.winfo_ismapped():
+            self.entry_custom_chars.pack_forget()
         modes_list = COLOR_MODES_EN if self.current_lang == "en" else COLOR_MODES_UK
         self.combo_colors.set(modes_list[0])
         self.switch_invert.deselect()
+        self.switch_dither.deselect()
+        self.switch_edges.deselect()
+        self.switch_crt.deselect()
         self.slider_contrast.set(1.0)
         self.lbl_contrast.configure(text=self.t("lbl_contrast", val=1.0))
         self.slider_brightness.set(0)
@@ -660,6 +844,12 @@ class AsciiStudioApp(ctk.CTk):
         if choice in presets_dict:
             self.entry_custom_chars.delete(0, "end")
             self.entry_custom_chars.insert(0, presets_dict[choice])
+            if self.entry_custom_chars.winfo_ismapped():
+                self.entry_custom_chars.pack_forget()
+        else:
+            # Custom set selected
+            if not self.entry_custom_chars.winfo_ismapped():
+                self.entry_custom_chars.pack(fill="x", padx=10, pady=(0, 8))
         self._on_setting_changed()
 
     def _on_setting_changed(self):
@@ -675,6 +865,9 @@ class AsciiStudioApp(ctk.CTk):
             "contrast": float(self.slider_contrast.get()),
             "brightness": int(self.slider_brightness.get()),
             "invert": bool(self.switch_invert.get()),
+            "dither": bool(self.switch_dither.get()),
+            "edges": bool(self.switch_edges.get()),
+            "crt": bool(self.switch_crt.get()),
         }
 
     def get_thread_safe_settings(self):
@@ -718,6 +911,9 @@ class AsciiStudioApp(ctk.CTk):
         self.combo_colors.set(modes_list[0])
 
         self.switch_invert.configure(text=self.t("switch_invert"))
+        self.switch_dither.configure(text=self.t("switch_dither"))
+        self.switch_edges.configure(text=self.t("switch_edges"))
+        self.switch_crt.configure(text=self.t("switch_crt"))
         self.lbl_contrast.configure(text=self.t("lbl_contrast", val=float(self.slider_contrast.get())))
         self.lbl_brightness.configure(text=self.t("lbl_brightness", val=int(self.slider_brightness.get())))
         self.btn_reset_settings.configure(text=self.t("btn_reset_settings"))
@@ -726,6 +922,7 @@ class AsciiStudioApp(ctk.CTk):
         self.btn_open_img.configure(text=self.t("btn_open_photo"))
         self.btn_open_cmd.configure(text=self.t("btn_open_cmd"))
         self.btn_save_png.configure(text=self.t("btn_save_png"))
+        self.btn_save_gif.configure(text=self.t("btn_save_gif"))
         self.btn_save_txt.configure(text=self.t("btn_save_txt"))
         self.btn_save_html.configure(text=self.t("btn_save_html"))
         self.btn_copy_text.configure(text=self.t("btn_copy_text"))
@@ -789,32 +986,17 @@ class AsciiStudioApp(ctk.CTk):
 
     def _animate_panels_transition(self, collapsing: bool):
         self._is_animating_panel = True
-        steps = [280, 210, 140, 70, 0] if collapsing else [70, 140, 210, 280]
-
-        if not collapsing:
+        if collapsing:
+            self.sidebar_frame.grid_remove()
+            self.settings_frame.grid_remove()
+            self.main_container.grid(row=0, column=0, columnspan=3, sticky="nsew", padx=8, pady=8)
+        else:
             self.sidebar_frame.grid(row=0, column=0, sticky="nsew")
             self.main_container.grid(row=0, column=1, sticky="nsew", padx=15, pady=15)
             self.settings_frame.grid(row=0, column=2, sticky="nsew", padx=(0, 15), pady=15)
-
-        def _step(i=0):
-            if i < len(steps):
-                w = steps[i]
-                try:
-                    self.settings_frame.configure(width=max(10, w))
-                except Exception:
-                    pass
-                self.after(14, lambda: _step(i + 1))
-            else:
-                if collapsing:
-                    self.sidebar_frame.grid_remove()
-                    self.settings_frame.grid_remove()
-                    self.main_container.grid(row=0, column=0, columnspan=3, sticky="nsew", padx=8, pady=8)
-                else:
-                    self.settings_frame.configure(width=280)
-                self._is_animating_panel = False
-                self._refit_current_canvas()
-
-        _step(0)
+            self.settings_frame.configure(width=290)
+        self._is_animating_panel = False
+        self._refit_current_canvas()
 
     def _refit_current_canvas(self):
         if self.current_mode == "image":
@@ -887,7 +1069,9 @@ class AsciiStudioApp(ctk.CTk):
             messagebox.showwarning("Notice", self.t("dialog_warn_no_img"))
             return
 
-        temp_path = str((Path(__file__).parent / "_cmd_preview.png").resolve())
+        import tempfile
+        temp_dir = Path(tempfile.gettempdir())
+        temp_path = str((temp_dir / "_ascii_studio_preview.png").resolve())
         try:
             _, buf = cv2.imencode(".png", self.current_orig_image)
             buf.tofile(temp_path)
@@ -921,78 +1105,167 @@ class AsciiStudioApp(ctk.CTk):
         self.image_view_frame.grid_rowconfigure(1, weight=1)
 
         # Верхня панель дій
-        top_bar = ctk.CTkFrame(self.image_view_frame, height=50)
+        top_bar = ctk.CTkFrame(
+            self.image_view_frame,
+            height=52,
+            fg_color=("#ffffff", "#131722"),
+            border_width=1,
+            border_color=("#e2e8f0", "#232a3b"),
+            corner_radius=12,
+        )
         top_bar.grid(row=0, column=0, sticky="ew", pady=(0, 10))
 
+        # Лівий блок: Дії відкриття
+        left_box = ctk.CTkFrame(top_bar, fg_color="transparent")
+        left_box.pack(side="left", padx=10, pady=8)
+
         self.btn_open_img = ctk.CTkButton(
-            top_bar,
+            left_box,
             text=self.t("btn_open_photo"),
-            width=135,
+            width=130,
+            height=34,
+            corner_radius=8,
+            font=ctk.CTkFont(size=12, weight="bold"),
+            fg_color="#2563eb",
+            hover_color="#1d4ed8",
             command=self.open_image_dialog,
         )
-        self.btn_open_img.pack(side="left", padx=(10, 4), pady=8)
+        self.btn_open_img.pack(side="left", padx=(0, 6))
 
         self.btn_open_cmd = ctk.CTkButton(
-            top_bar,
+            left_box,
             text=self.t("btn_open_cmd"),
-            width=140,
+            width=120,
+            height=34,
+            corner_radius=8,
+            font=ctk.CTkFont(size=12),
             state="disabled",
-            fg_color="#34495e",
-            hover_color="#2c3e50",
+            fg_color=("#e2e8f0", "#1e293b"),
+            text_color=("#334155", "#94a3b8"),
+            hover_color=("#cbd5e1", "#334155"),
             command=self.open_image_in_cmd,
         )
-        self.btn_open_cmd.pack(side="left", padx=4, pady=8)
+        self.btn_open_cmd.pack(side="left", padx=(0, 6))
+
+        # Правий блок: Повний екран
+        right_box = ctk.CTkFrame(top_bar, fg_color="transparent")
+        right_box.pack(side="right", padx=10, pady=8)
+
+        self.btn_fullscreen_img = ctk.CTkButton(
+            right_box,
+            text=self.t("btn_fullscreen"),
+            width=130,
+            height=34,
+            corner_radius=8,
+            font=ctk.CTkFont(size=11),
+            fg_color=("#e2e8f0", "#1e293b"),
+            text_color=("#334155", "#94a3b8"),
+            hover_color=("#cbd5e1", "#334155"),
+            command=self.toggle_fullscreen,
+        )
+        self.btn_fullscreen_img.pack(side="right")
+
+        # Центральний капсульний блок експорту
+        export_pill = ctk.CTkFrame(
+            top_bar,
+            fg_color=("#f1f5f9", "#0c0e14"),
+            border_width=1,
+            border_color=("#cbd5e1", "#1e2536"),
+            corner_radius=10,
+        )
+        export_pill.pack(side="left", fill="y", padx=10, pady=8)
+
+        lbl_export = ctk.CTkLabel(
+            export_pill,
+            text="EXPORT:",
+            font=ctk.CTkFont(size=10, weight="bold"),
+            text_color="#64748b",
+        )
+        lbl_export.pack(side="left", padx=(8, 4))
 
         self.btn_save_png = ctk.CTkButton(
-            top_bar,
+            export_pill,
             text=self.t("btn_save_png"),
-            width=125,
+            width=100,
+            height=28,
+            corner_radius=6,
+            font=ctk.CTkFont(size=11, weight="bold"),
+            fg_color=("#ffffff", "#1e2536"),
+            text_color=("#0f172a", "#e2e8f0"),
+            hover_color=("#e2e8f0", "#2d3748"),
             state="disabled",
             command=self.save_as_png,
         )
-        self.btn_save_png.pack(side="left", padx=4, pady=8)
+        self.btn_save_png.pack(side="left", padx=3)
+
+        self.btn_save_gif = ctk.CTkButton(
+            export_pill,
+            text=self.t("btn_save_gif"),
+            width=95,
+            height=28,
+            corner_radius=6,
+            font=ctk.CTkFont(size=11),
+            fg_color=("#ffffff", "#1e2536"),
+            text_color=("#0f172a", "#e2e8f0"),
+            hover_color=("#e2e8f0", "#2d3748"),
+            state="disabled",
+            command=self.save_as_gif,
+        )
+        self.btn_save_gif.pack(side="left", padx=3)
 
         self.btn_save_txt = ctk.CTkButton(
-            top_bar,
+            export_pill,
             text=self.t("btn_save_txt"),
-            width=125,
+            width=95,
+            height=28,
+            corner_radius=6,
+            font=ctk.CTkFont(size=11),
+            fg_color=("#ffffff", "#1e2536"),
+            text_color=("#0f172a", "#e2e8f0"),
+            hover_color=("#e2e8f0", "#2d3748"),
             state="disabled",
             command=self.save_as_txt,
         )
-        self.btn_save_txt.pack(side="left", padx=4, pady=8)
+        self.btn_save_txt.pack(side="left", padx=3)
 
         self.btn_save_html = ctk.CTkButton(
-            top_bar,
+            export_pill,
             text=self.t("btn_save_html"),
-            width=135,
+            width=105,
+            height=28,
+            corner_radius=6,
+            font=ctk.CTkFont(size=11),
+            fg_color=("#ffffff", "#1e2536"),
+            text_color=("#0f172a", "#e2e8f0"),
+            hover_color=("#e2e8f0", "#2d3748"),
             state="disabled",
             command=self.save_as_html,
         )
-        self.btn_save_html.pack(side="left", padx=4, pady=8)
+        self.btn_save_html.pack(side="left", padx=3)
 
         self.btn_copy_text = ctk.CTkButton(
-            top_bar,
+            export_pill,
             text=self.t("btn_copy_text"),
-            width=135,
+            width=95,
+            height=28,
+            corner_radius=6,
+            font=ctk.CTkFont(size=11),
+            fg_color=("#ffffff", "#1e2536"),
+            text_color=("#0f172a", "#e2e8f0"),
+            hover_color=("#e2e8f0", "#2d3748"),
             state="disabled",
-            fg_color="gray30",
-            hover_color="gray40",
             command=self.copy_ascii_to_clipboard,
         )
-        self.btn_copy_text.pack(side="left", padx=4, pady=8)
-
-        self.btn_fullscreen_img = ctk.CTkButton(
-            top_bar,
-            text=self.t("btn_fullscreen"),
-            width=150,
-            fg_color="gray25",
-            hover_color="gray35",
-            command=self.toggle_fullscreen,
-        )
-        self.btn_fullscreen_img.pack(side="right", padx=10, pady=8)
+        self.btn_copy_text.pack(side="left", padx=(3, 6))
 
         # Таби попереднього перегляду
-        self.image_tabs = ctk.CTkTabview(self.image_view_frame)
+        self.image_tabs = ctk.CTkTabview(
+            self.image_view_frame,
+            segmented_button_fg_color=("#e2e8f0", "#141822"),
+            segmented_button_selected_color="#2563eb",
+            segmented_button_selected_hover_color="#1d4ed8",
+            segmented_button_unselected_hover_color=("#cbd5e1", "#232a3b"),
+        )
         self.image_tabs.grid(row=1, column=0, sticky="nsew")
 
         tab_render = self.image_tabs.add(self.t("tab_ascii_render"))
@@ -1131,6 +1404,7 @@ class AsciiStudioApp(ctk.CTk):
 
         self.btn_open_cmd.configure(state="normal")
         self.btn_save_png.configure(state="normal")
+        self.btn_save_gif.configure(state="normal")
         self.btn_save_txt.configure(state="normal")
         self.btn_save_html.configure(state="normal")
         self.btn_copy_text.configure(state="normal")
@@ -1164,6 +1438,9 @@ class AsciiStudioApp(ctk.CTk):
                     brightness=opts["brightness"],
                     invert=opts["invert"],
                     generate_text=True,
+                    dither=opts.get("dither", False),
+                    edges=opts.get("edges", False),
+                    crt=opts.get("crt", False),
                 )
             except Exception as e:
                 rendered_pil, plain_text, rgb_grid, text_grid = None, f"Error: {e}", None, None
@@ -1211,6 +1488,27 @@ class AsciiStudioApp(ctk.CTk):
                 defaultextension=".png",
                 initialfile=default_name,
                 filetypes=[("PNG Image", "*.png"), ("JPEG Image", "*.jpg")],
+            )
+        if path:
+            self.last_rendered_pil.save(path)
+            if not export_path:
+                messagebox.showinfo(self.t("dialog_saved_title"), self.t("dialog_saved_msg", path=path))
+            return path
+        return None
+
+    def save_as_gif(self, export_path: str = None):
+        if not self.last_rendered_pil:
+            return None
+        default_name = "ascii_art.gif"
+        if self.current_image_path:
+            default_name = f"{Path(self.current_image_path).stem}_ascii.gif"
+        path = export_path
+        if not path:
+            path = filedialog.asksaveasfilename(
+                title=self.t("btn_save_gif"),
+                defaultextension=".gif",
+                initialfile=default_name,
+                filetypes=[("GIF Image", "*.gif")],
             )
         if path:
             self.last_rendered_pil.save(path)
@@ -1278,83 +1576,150 @@ class AsciiStudioApp(ctk.CTk):
         self.video_view_frame.grid_rowconfigure(2, weight=1)
 
         # Верхня панель дій
-        top_bar = ctk.CTkFrame(self.video_view_frame, height=50)
+        top_bar = ctk.CTkFrame(
+            self.video_view_frame,
+            height=52,
+            fg_color=("#ffffff", "#131722"),
+            border_width=1,
+            border_color=("#e2e8f0", "#232a3b"),
+            corner_radius=12,
+        )
         top_bar.grid(row=0, column=0, sticky="ew", pady=(0, 10))
 
         self.btn_open_video = ctk.CTkButton(
             top_bar,
             text=self.t("btn_open_video"),
-            width=135,
+            width=130,
+            height=34,
+            corner_radius=8,
+            font=ctk.CTkFont(size=12, weight="bold"),
+            fg_color="#2563eb",
+            hover_color="#1d4ed8",
             command=self.open_video_dialog,
         )
-        self.btn_open_video.pack(side="left", padx=8, pady=8)
+        self.btn_open_video.pack(side="left", padx=(10, 6), pady=8)
 
         self.btn_video_cmd = ctk.CTkButton(
             top_bar,
             text=self.t("btn_open_cmd"),
-            width=140,
+            width=120,
+            height=34,
+            corner_radius=8,
+            font=ctk.CTkFont(size=12),
             state="disabled",
-            fg_color="#34495e",
-            hover_color="#2c3e50",
+            fg_color=("#e2e8f0", "#1e293b"),
+            text_color=("#334155", "#94a3b8"),
+            hover_color=("#cbd5e1", "#334155"),
             command=self.open_video_in_cmd,
         )
-        self.btn_video_cmd.pack(side="left", padx=4, pady=8)
+        self.btn_video_cmd.pack(side="left", padx=3, pady=8)
+
+        # Контроли відтворення
+        play_ctrl = ctk.CTkFrame(
+            top_bar,
+            fg_color=("#f1f5f9", "#0c0e14"),
+            border_width=1,
+            border_color=("#cbd5e1", "#1e2536"),
+            corner_radius=10,
+        )
+        play_ctrl.pack(side="left", padx=8, pady=8)
 
         self.btn_play_pause = ctk.CTkButton(
-            top_bar,
+            play_ctrl,
             text=self.t("btn_play"),
-            width=120,
+            width=100,
+            height=28,
+            corner_radius=6,
+            font=ctk.CTkFont(size=12, weight="bold"),
             state="disabled",
-            fg_color="#2ecc71",
-            hover_color="#27ae60",
+            fg_color="#10b981",
+            hover_color="#059669",
             command=self.toggle_video_play,
         )
-        self.btn_play_pause.pack(side="left", padx=4, pady=8)
+        self.btn_play_pause.pack(side="left", padx=4, pady=3)
 
         self.btn_stop_video = ctk.CTkButton(
-            top_bar,
+            play_ctrl,
             text=self.t("btn_stop"),
-            width=100,
+            width=80,
+            height=28,
+            corner_radius=6,
+            font=ctk.CTkFont(size=12),
             state="disabled",
-            fg_color="gray30",
-            hover_color="gray40",
+            fg_color=("#e2e8f0", "#1e293b"),
+            text_color=("#334155", "#cbd5e1"),
+            hover_color=("#cbd5e1", "#334155"),
             command=self.stop_video,
         )
-        self.btn_stop_video.pack(side="left", padx=4, pady=8)
+        self.btn_stop_video.pack(side="left", padx=3, pady=3)
 
-        self.switch_loop = ctk.CTkSwitch(top_bar, text=self.t("switch_loop"), command=self._on_loop_switch_changed)
+        self.switch_loop = ctk.CTkSwitch(
+            play_ctrl,
+            text=self.t("switch_loop"),
+            font=ctk.CTkFont(size=11),
+            progress_color="#3b82f6",
+            command=self._on_loop_switch_changed,
+        )
         self.switch_loop.select()
         self.video_loop = True
-        self.switch_loop.pack(side="left", padx=10, pady=8)
+        self.switch_loop.pack(side="left", padx=(8, 8), pady=3)
 
         self.btn_snapshot_video = ctk.CTkButton(
             top_bar,
             text=self.t("btn_snapshot_video"),
-            width=135,
+            width=125,
+            height=34,
+            corner_radius=8,
+            font=ctk.CTkFont(size=12),
             state="disabled",
+            fg_color=("#e2e8f0", "#1e293b"),
+            text_color=("#334155", "#cbd5e1"),
+            hover_color=("#cbd5e1", "#334155"),
             command=self.save_video_snapshot,
         )
         self.btn_snapshot_video.pack(side="right", padx=10, pady=8)
 
         # Панель таймлайну
-        timeline_bar = ctk.CTkFrame(self.video_view_frame, height=35)
+        timeline_bar = ctk.CTkFrame(
+            self.video_view_frame,
+            height=40,
+            fg_color=("#ffffff", "#131722"),
+            border_width=1,
+            border_color=("#e2e8f0", "#232a3b"),
+            corner_radius=10,
+        )
         timeline_bar.grid(row=1, column=0, sticky="ew", pady=(0, 10))
         timeline_bar.grid_columnconfigure(1, weight=1)
 
-        self.lbl_video_time = ctk.CTkLabel(timeline_bar, text="00:00 / 00:00", width=100)
-        self.lbl_video_time.grid(row=0, column=0, padx=10, pady=5)
+        self.lbl_video_time = ctk.CTkLabel(
+            timeline_bar,
+            text="00:00 / 00:00",
+            width=100,
+            font=ctk.CTkFont(size=11, weight="bold"),
+            text_color=("#475569", "#94a3b8"),
+        )
+        self.lbl_video_time.grid(row=0, column=0, padx=10, pady=6)
 
         self.slider_timeline = ctk.CTkSlider(
             timeline_bar,
             from_=0,
             to=100,
+            progress_color="#3b82f6",
+            button_color="#60a5fa",
+            button_hover_color="#93c5fd",
             command=self._on_seek_video,
         )
         self.slider_timeline.set(0)
-        self.slider_timeline.grid(row=0, column=1, sticky="ew", padx=10, pady=5)
+        self.slider_timeline.grid(row=0, column=1, sticky="ew", padx=10, pady=6)
 
-        self.lbl_video_fps = ctk.CTkLabel(timeline_bar, text="FPS: --", width=70)
-        self.lbl_video_fps.grid(row=0, column=2, padx=10, pady=5)
+        self.lbl_video_fps = ctk.CTkLabel(
+            timeline_bar,
+            text="FPS: --",
+            width=70,
+            font=ctk.CTkFont(size=11, weight="bold"),
+            text_color="#10b981",
+        )
+        self.lbl_video_fps.grid(row=0, column=2, padx=10, pady=6)
 
         # Дисплей відео з інтерактивним зумом
         self.video_canvas = ZoomableImageFrame(
@@ -1489,6 +1854,9 @@ class AsciiStudioApp(ctk.CTk):
                 brightness=opts["brightness"],
                 invert=opts["invert"],
                 generate_text=False,
+                dither=opts.get("dither", False),
+                edges=opts.get("edges", False),
+                crt=opts.get("crt", False),
             )
 
             fps_counter += 1
@@ -1515,6 +1883,9 @@ class AsciiStudioApp(ctk.CTk):
             contrast=opts["contrast"],
             brightness=opts["brightness"],
             invert=opts["invert"],
+            dither=opts.get("dither", False),
+            edges=opts.get("edges", False),
+            crt=opts.get("crt", False),
         )
         self.last_video_frame_pil = pil_img
         self.video_canvas.set_image(pil_img, reset_fit=reset_fit)
@@ -1563,51 +1934,96 @@ class AsciiStudioApp(ctk.CTk):
         self.webcam_view_frame.grid_rowconfigure(1, weight=1)
 
         # Верхня панель дій
-        top_bar = ctk.CTkFrame(self.webcam_view_frame, height=50)
+        top_bar = ctk.CTkFrame(
+            self.webcam_view_frame,
+            height=52,
+            fg_color=("#ffffff", "#131722"),
+            border_width=1,
+            border_color=("#e2e8f0", "#232a3b"),
+            corner_radius=12,
+        )
         top_bar.grid(row=0, column=0, sticky="ew", pady=(0, 10))
 
-        self.lbl_webcam_cam = ctk.CTkLabel(top_bar, text=self.t("lbl_camera"))
-        self.lbl_webcam_cam.pack(side="left", padx=(10, 5), pady=8)
+        cam_box = ctk.CTkFrame(
+            top_bar,
+            fg_color=("#f1f5f9", "#0c0e14"),
+            border_width=1,
+            border_color=("#cbd5e1", "#1e2536"),
+            corner_radius=10,
+        )
+        cam_box.pack(side="left", padx=10, pady=8)
+
+        self.lbl_webcam_cam = ctk.CTkLabel(
+            cam_box,
+            text=self.t("lbl_camera"),
+            font=ctk.CTkFont(size=11, weight="bold"),
+            text_color=("#475569", "#94a3b8"),
+        )
+        self.lbl_webcam_cam.pack(side="left", padx=(10, 4), pady=4)
 
         self.combo_camera_idx = ctk.CTkOptionMenu(
-            top_bar,
+            cam_box,
             values=[self.t("camera_name", idx=0), self.t("camera_name", idx=1), self.t("camera_name", idx=2)],
-            width=110,
+            width=115,
+            height=28,
+            corner_radius=6,
+            fg_color=("#334155", "#1f2637"),
+            button_color=("#475569", "#2b344c"),
+            button_hover_color=("#64748b", "#3b4766"),
             command=self._on_camera_select,
         )
         self.combo_camera_idx.set(self.t("camera_name", idx=0))
-        self.combo_camera_idx.pack(side="left", padx=5, pady=8)
+        self.combo_camera_idx.pack(side="left", padx=(0, 6), pady=4)
 
         self.btn_toggle_webcam = ctk.CTkButton(
             top_bar,
             text=self.t("btn_start_webcam"),
-            width=165,
-            fg_color="#2ecc71",
-            hover_color="#27ae60",
+            width=145,
+            height=34,
+            corner_radius=8,
+            font=ctk.CTkFont(size=12, weight="bold"),
+            fg_color="#10b981",
+            hover_color="#059669",
             command=self.toggle_webcam,
         )
-        self.btn_toggle_webcam.pack(side="left", padx=6, pady=8)
+        self.btn_toggle_webcam.pack(side="left", padx=(4, 6), pady=8)
 
         self.btn_webcam_cmd = ctk.CTkButton(
             top_bar,
             text=self.t("btn_open_cmd"),
-            width=140,
-            fg_color="#34495e",
-            hover_color="#2c3e50",
+            width=120,
+            height=34,
+            corner_radius=8,
+            font=ctk.CTkFont(size=12),
+            fg_color=("#e2e8f0", "#1e293b"),
+            text_color=("#334155", "#94a3b8"),
+            hover_color=("#cbd5e1", "#334155"),
             command=self.open_webcam_in_cmd,
         )
-        self.btn_webcam_cmd.pack(side="left", padx=4, pady=8)
+        self.btn_webcam_cmd.pack(side="left", padx=3, pady=8)
 
         self.btn_snapshot_webcam = ctk.CTkButton(
             top_bar,
             text=self.t("btn_snapshot_webcam"),
-            width=140,
+            width=135,
+            height=34,
+            corner_radius=8,
+            font=ctk.CTkFont(size=12),
             state="disabled",
+            fg_color=("#e2e8f0", "#1e293b"),
+            text_color=("#334155", "#cbd5e1"),
+            hover_color=("#cbd5e1", "#334155"),
             command=self.take_webcam_snapshot,
         )
-        self.btn_snapshot_webcam.pack(side="left", padx=4, pady=8)
+        self.btn_snapshot_webcam.pack(side="left", padx=3, pady=8)
 
-        self.lbl_webcam_fps = ctk.CTkLabel(top_bar, text="FPS: --", width=80)
+        self.lbl_webcam_fps = ctk.CTkLabel(
+            top_bar,
+            text="FPS: --",
+            width=80,
+            font=ctk.CTkFont(size=12, weight="bold"),
+            text_color="#10b981",
+        )
         self.lbl_webcam_fps.pack(side="right", padx=15, pady=8)
 
         # Дисплей вебкамери із зумом
@@ -1701,6 +2117,9 @@ class AsciiStudioApp(ctk.CTk):
                 brightness=opts["brightness"],
                 invert=opts["invert"],
                 generate_text=False,
+                dither=opts.get("dither", False),
+                edges=opts.get("edges", False),
+                crt=opts.get("crt", False),
             )
 
             fps_counter += 1
@@ -1745,6 +2164,7 @@ class AsciiStudioApp(ctk.CTk):
 
         self.btn_open_cmd.configure(state="normal")
         self.btn_save_png.configure(state="normal")
+        self.btn_save_gif.configure(state="normal")
         self.btn_save_txt.configure(state="normal")
         self.btn_save_html.configure(state="normal")
         self.btn_copy_text.configure(state="normal")
